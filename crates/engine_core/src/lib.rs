@@ -7,6 +7,12 @@ pub mod rendering;
 pub mod time;
 pub mod window;
 
+#[cfg(test)]
+mod tests;
+
+pub use inventory;
+pub use macros::Component;
+
 use anyhow::Result;
 
 /// Engine handler

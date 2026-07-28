@@ -13,3 +13,5 @@ ash.workspace = true
 ash-window.workspace = true
 anyhow.workspace  = true
 nalgebra.workspace  = true
+rand.workspace = true
+inventory = "0.3.24"

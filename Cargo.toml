@@ -18,4 +18,5 @@ ash-window = "0.13.0"
 anyhow = "1.0.100"
 nalgebra = "0.35.0"
 winit = "0.30.5"
-
+inventory = "0.3.24"
+rand = "0.10.2"

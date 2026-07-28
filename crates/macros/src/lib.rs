@@ -1,3 +1,40 @@
-fn main() {
-    println!("Hello, world!");
+use proc_macro::TokenStream;
+use proc_macro_crate::{FoundCrate, crate_name};
+use proc_macro2::Span;
+use quote::quote;
+use syn::{DeriveInput, Ident, parse_macro_input};
+
+#[proc_macro_derive(Component)]
+pub fn derive_component(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    let ident = &input.ident;
+
+    let engine_core = match crate_name("engine_core") {
+        Ok(FoundCrate::Itself) => quote!(crate),
+        Ok(FoundCrate::Name(name)) => {
+            let ident = Ident::new(&name, Span::call_site());
+            quote!(::#ident)
+        }
+        Err(_) => quote!(::engine_core),
+    };
+
+    let register_fn_name = Ident::new(&format!("__register_component_{}", ident), ident.span());
+    let name_str = ident.to_string();
+
+    let expanded = quote! {
+        const _: fn() = || {
+            fn assert_component<T: #engine_core::ecs::components::Component>() {}
+            assert_component::<#ident>();
+        };
+
+        #engine_core::inventory::submit! {
+            #engine_core::ecs::components::component_registry::ComponentRegistration {
+                type_id: ::std::any::TypeId::of::<#ident>,
+                type_name: #name_str,
+                create_column: || #engine_core::ecs::components::archetype::Column::new::<#ident>(),
+            }
+        }
+    };
+
+    expanded.into()
 }
