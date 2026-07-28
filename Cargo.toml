@@ -1,0 +1,21 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/macros",
+    "crates/engine_core",
+    "crates/editor",
+    "crates/game",
+]
+
+[workspace.package]
+edition = "2024"
+
+[workspace.dependencies]
+libloading = "0.8"
+hot-lib-reloader = "0.7"
+ash = "0.38.0"
+ash-window = "0.13.0"
+anyhow = "1.0.100"
+nalgebra = "0.35.0"
+winit = "0.30.5"
+
