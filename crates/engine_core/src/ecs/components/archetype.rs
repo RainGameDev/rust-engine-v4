@@ -36,7 +36,6 @@ pub struct Column {
 
 /// Stable identifier for an archetypes componentsignature.
 pub type ArchetypeSignature = Vec<TypeId>;
-
 impl Column {
     /// Creates an empty column sized for type `T`.
     pub(crate) fn new<T: 'static>() -> Self {
@@ -48,15 +47,18 @@ impl Column {
             drop_fn: |ptr| unsafe { std::ptr::drop_in_place(ptr as *mut T) },
         }
     }
-
     /// Byte offset of element `index` within the allocation.
     #[inline]
     fn offset_of(&self, index: usize) -> isize {
         (self.item_layout.size() * index) as isize
     }
-
     /// Grows the backing allocation, doubling capacity.
     fn grow(&mut self) {
+        if self.item_layout.size() == 0 {
+            self.capacity = usize::MAX;
+            return;
+        }
+
         let new_capacity = if self.capacity == 0 {
             4
         } else {
@@ -67,7 +69,6 @@ impl Column {
             self.item_layout.align(),
         )
         .expect("column layout overflow");
-
         let new_data = unsafe {
             if self.capacity == 0 {
                 alloc(new_layout)
@@ -80,56 +81,54 @@ impl Column {
                 realloc(self.data, old_layout, new_layout.size())
             }
         };
-
         if new_data.is_null() {
             handle_alloc_error(new_layout);
         }
-
         self.data = new_data;
         self.capacity = new_capacity;
     }
-
     /// Pushes a raw value of the column's component type onto the end.
     pub(crate) unsafe fn push_raw(&mut self, src: *const u8) {
         if self.len == self.capacity {
             self.grow();
         }
         unsafe {
-            let dst = self.data.offset(self.offset_of(self.len));
-            std::ptr::copy_nonoverlapping(src, dst, self.item_layout.size());
+            if self.item_layout.size() > 0 {
+                let dst = self.data.offset(self.offset_of(self.len));
+                std::ptr::copy_nonoverlapping(src, dst, self.item_layout.size());
+            }
         }
         self.len += 1;
     }
-
     /// Removes element `index`, moving the last element into its place to stay dense.
     pub(crate) unsafe fn swap_remove(&mut self, index: usize) {
         unsafe {
             debug_assert!(index < self.len);
-            let removed_ptr = self.data.offset(self.offset_of(index));
+            let removed_ptr = self.get_raw(index);
             (self.drop_fn)(removed_ptr);
-
             let last = self.len - 1;
-            if index != last {
+            if index != last && self.item_layout.size() > 0 {
                 let last_ptr = self.data.offset(self.offset_of(last));
                 std::ptr::copy_nonoverlapping(last_ptr, removed_ptr, self.item_layout.size());
             }
             self.len -= 1;
         }
     }
-
     /// Pointer to element `index`, for reading/writing through a typed reference at the call site.
     pub(crate) unsafe fn get_raw(&self, index: usize) -> *mut u8 {
         unsafe {
             debug_assert!(index < self.len);
+            if self.item_layout.size() == 0 {
+                return std::ptr::NonNull::<u8>::dangling().as_ptr();
+            }
             self.data.offset(self.offset_of(index))
         }
     }
-
     pub(crate) unsafe fn swap_remove_forget(&mut self, index: usize) {
         unsafe {
             debug_assert!(index < self.len);
             let last = self.len - 1;
-            if index != last {
+            if index != last && self.item_layout.size() > 0 {
                 let last_ptr = self.data.offset(self.offset_of(last));
                 let removed_ptr = self.data.offset(self.offset_of(index));
                 std::ptr::copy_nonoverlapping(last_ptr, removed_ptr, self.item_layout.size());
@@ -138,14 +137,13 @@ impl Column {
         }
     }
 }
-
 impl Drop for Column {
     fn drop(&mut self) {
         // Drop every live element, then free the allocation.
         for i in 0..self.len {
             unsafe { (self.drop_fn)(self.get_raw(i)) };
         }
-        if self.capacity > 0 {
+        if self.capacity > 0 && self.capacity != usize::MAX && self.item_layout.size() > 0 {
             let layout = Layout::from_size_align(
                 self.item_layout.size() * self.capacity,
                 self.item_layout.align(),
@@ -155,7 +153,6 @@ impl Drop for Column {
         }
     }
 }
-
 impl Archetype {
     /// Creates an empty archetype for the given signature.
     pub(crate) fn new(signature: ArchetypeSignature) -> Self {
@@ -219,15 +216,13 @@ impl Archetype {
 
         unsafe {
             let dst = column.get_raw(row);
-            // drop the old value
             (column.drop_fn)(dst);
-            // move new bytes in
-            std::ptr::copy_nonoverlapping(src, dst, column.item_layout.size());
-            // free the box's allocation
-            dealloc(src, column.item_layout);
+            if column.item_layout.size() > 0 {
+                std::ptr::copy_nonoverlapping(src, dst, column.item_layout.size());
+                dealloc(src, column.item_layout);
+            }
         }
     }
-
     /// Moves the row at `old_row` in into `archetypes[new_id]`,
     /// copying data for every column the two archetypes share
     pub(crate) fn move_row(
@@ -272,11 +267,11 @@ impl Archetype {
                 .expect("target archetype missing column for inserted component");
             unsafe {
                 column.push_raw(src);
-                // bytes moved, just free the box's memory
-                dealloc(src, column.item_layout);
+                if column.item_layout.size() > 0 {
+                    dealloc(src, column.item_layout);
+                }
             }
         }
-
         new_archetype.entities.push(entity);
         let new_row = new_archetype.entities.len() - 1;
 

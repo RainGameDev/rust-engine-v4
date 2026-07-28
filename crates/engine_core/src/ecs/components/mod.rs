@@ -1,6 +1,5 @@
 pub mod archetype;
 pub mod component_registry;
-pub mod query;
 
 use std::any::Any;
 use std::fmt::Debug;
