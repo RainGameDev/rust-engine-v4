@@ -9,11 +9,14 @@ use ash::{
 use winit::raw_window_handle::HasWindowHandle;
 use winit::{raw_window_handle::HasDisplayHandle, window::Window};
 
-use crate::rendering::vulkan::{
-    device::PhysicalDevice,
-    image::ImageLayoutState,
-    queue::{QueueFamilies, QueueFamily, QueueFamilyPicker},
-    surface::Surface,
+use crate::rendering::{
+    core::vertex::{Vertex, VertexDefinition},
+    vulkan::{
+        device::PhysicalDevice,
+        image::ImageLayoutState,
+        queue::{QueueFamilies, QueueFamily, QueueFamilyPicker},
+        surface::Surface,
+    },
 };
 
 pub struct RenderingContextAttributes<'window> {
@@ -228,6 +231,10 @@ impl VulkanRenderingContext {
     ) -> Result<vk::Pipeline> {
         let entry_point = std::ffi::CString::new("main").unwrap();
 
+        let bindings = vec![Vertex::get_binding_description()];
+
+        let attributes = Vertex::get_attribute_descriptions();
+
         unsafe {
             Ok(self
                 .device
@@ -244,11 +251,14 @@ impl VulkanRenderingContext {
                                 .module(fragment_shader)
                                 .name(&entry_point),
                         ])
-                        .vertex_input_state(&vk::PipelineVertexInputStateCreateInfo::default())
+                        .vertex_input_state(
+                            &vk::PipelineVertexInputStateCreateInfo::default()
+                                .vertex_binding_descriptions(&bindings)
+                                .vertex_attribute_descriptions(&attributes),
+                        )
                         .input_assembly_state(
                             &vk::PipelineInputAssemblyStateCreateInfo::default()
-                                .topology(vk::PrimitiveTopology::TRIANGLE_LIST)
-                                .primitive_restart_enable(false),
+                                .topology(vk::PrimitiveTopology::TRIANGLE_LIST),
                         )
                         .viewport_state(
                             &vk::PipelineViewportStateCreateInfo::default()
@@ -269,7 +279,7 @@ impl VulkanRenderingContext {
                             &vk::PipelineRasterizationStateCreateInfo::default()
                                 .depth_clamp_enable(false)
                                 .rasterizer_discard_enable(false)
-                                .polygon_mode(vk::PolygonMode::FILL)
+                                .polygon_mode(vk::PolygonMode::LINE)
                                 .cull_mode(vk::CullModeFlags::NONE)
                                 .front_face(vk::FrontFace::CLOCKWISE)
                                 .depth_bias_enable(false)
@@ -476,5 +486,193 @@ impl VulkanRenderingContext {
             "Failed to find suitable memory type with filter: {}",
             filter
         ))
+    }
+
+    pub fn begin_single_time_commands(&self, command_pool: vk::CommandPool) -> vk::CommandBuffer {
+        let alloc_info = vk::CommandBufferAllocateInfo::default()
+            .level(vk::CommandBufferLevel::PRIMARY)
+            .command_pool(command_pool)
+            .command_buffer_count(1);
+
+        let cmd_buf = unsafe { self.device.allocate_command_buffers(&alloc_info).unwrap()[0] };
+        let begin_info = vk::CommandBufferBeginInfo::default()
+            .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
+
+        unsafe {
+            self.device
+                .begin_command_buffer(cmd_buf, &begin_info)
+                .unwrap()
+        };
+        cmd_buf
+    }
+
+    pub fn end_single_time_commands(
+        &self,
+        cmd_buf: vk::CommandBuffer,
+        queue: vk::Queue,
+        command_pool: vk::CommandPool,
+    ) {
+        unsafe {
+            self.device.end_command_buffer(cmd_buf).unwrap();
+
+            let buffer = &[cmd_buf];
+            let submit_info = vk::SubmitInfo::default().command_buffers(buffer);
+            self.device
+                .queue_submit(queue, &[submit_info], vk::Fence::null())
+                .unwrap();
+            self.device.queue_wait_idle(queue).unwrap();
+            self.device.free_command_buffers(command_pool, &[cmd_buf]);
+        }
+    }
+    pub fn create_buffer(
+        &self,
+        size: vk::DeviceSize,
+        usage: vk::BufferUsageFlags,
+        properties: vk::MemoryPropertyFlags,
+    ) -> Result<(vk::Buffer, vk::DeviceMemory)> {
+        let buffer_info = vk::BufferCreateInfo::default()
+            .size(size)
+            .usage(usage)
+            .sharing_mode(vk::SharingMode::EXCLUSIVE);
+
+        let buffer = unsafe { self.device.create_buffer(&buffer_info, None)? };
+        let mem_requirements = unsafe { self.device.get_buffer_memory_requirements(buffer) };
+
+        let alloc_info = vk::MemoryAllocateInfo::default()
+            .allocation_size(mem_requirements.size)
+            .memory_type_index(
+                self.find_memory_type(mem_requirements.memory_type_bits, properties)?,
+            );
+
+        let memory = unsafe { self.device.allocate_memory(&alloc_info, None)? };
+
+        unsafe { self.device.bind_buffer_memory(buffer, memory, 0)? };
+
+        Ok((buffer, memory))
+    }
+
+    pub fn create_vertex_buffer<T: VertexDefinition>(
+        &self,
+        vertices: &[T],
+        command_pool: vk::CommandPool,
+    ) -> Result<(vk::Buffer, vk::DeviceMemory)> {
+        let buffer_size = (size_of::<T>() * vertices.len()) as vk::DeviceSize;
+
+        // Create staging buffer
+        let (staging_buffer, staging_memory) = self.create_buffer(
+            buffer_size,
+            vk::BufferUsageFlags::TRANSFER_SRC,
+            vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
+        )?;
+
+        unsafe {
+            let data_ptr = self.device.map_memory(
+                staging_memory,
+                0,
+                buffer_size,
+                vk::MemoryMapFlags::empty(),
+            )? as *mut T;
+            data_ptr.copy_from_nonoverlapping(vertices.as_ptr(), vertices.len());
+            self.device.unmap_memory(staging_memory);
+        }
+
+        // Create device local buffer
+        let buffer_info = vk::BufferCreateInfo::default()
+            .size(buffer_size)
+            .usage(vk::BufferUsageFlags::TRANSFER_DST | vk::BufferUsageFlags::VERTEX_BUFFER)
+            .sharing_mode(vk::SharingMode::EXCLUSIVE);
+
+        let buffer = unsafe { self.device.create_buffer(&buffer_info, None)? };
+        let mem_requirements = unsafe { self.device.get_buffer_memory_requirements(buffer) };
+
+        let alloc_info = vk::MemoryAllocateInfo::default()
+            .allocation_size(mem_requirements.size)
+            .memory_type_index(self.find_memory_type(
+                mem_requirements.memory_type_bits,
+                vk::MemoryPropertyFlags::DEVICE_LOCAL,
+            )?);
+
+        let buffer_memory = unsafe { self.device.allocate_memory(&alloc_info, None)? };
+        unsafe { self.device.bind_buffer_memory(buffer, buffer_memory, 0)? };
+
+        // Copy staging -> device local
+        let cmd = self.begin_single_time_commands(command_pool);
+        unsafe {
+            let copy_region = vk::BufferCopy::default().size(buffer_size);
+            self.device
+                .cmd_copy_buffer(cmd, staging_buffer, buffer, &[copy_region]);
+        }
+        let queue = self.queues[self.queue_families.transfer as usize];
+        self.end_single_time_commands(cmd, queue, command_pool);
+
+        unsafe {
+            self.device.destroy_buffer(staging_buffer, None);
+            self.device.free_memory(staging_memory, None);
+        }
+
+        Ok((buffer, buffer_memory))
+    }
+
+    /// Creates an index buffer from a slice of indices
+    pub fn create_index_buffer(
+        &self,
+        indices: &[u32],
+        command_pool: vk::CommandPool,
+    ) -> Result<(vk::Buffer, vk::DeviceMemory)> {
+        let buffer_size = (std::mem::size_of::<u32>() * indices.len()) as vk::DeviceSize;
+
+        // staging
+        let (staging_buffer, staging_memory) = self.create_buffer(
+            buffer_size,
+            vk::BufferUsageFlags::TRANSFER_SRC,
+            vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
+        )?;
+
+        unsafe {
+            let data_ptr = self.device.map_memory(
+                staging_memory,
+                0,
+                buffer_size,
+                vk::MemoryMapFlags::empty(),
+            )? as *mut u32;
+            data_ptr.copy_from_nonoverlapping(indices.as_ptr(), indices.len());
+            self.device.unmap_memory(staging_memory);
+        }
+
+        // device local
+        let buffer_info = vk::BufferCreateInfo::default()
+            .size(buffer_size)
+            .usage(vk::BufferUsageFlags::TRANSFER_DST | vk::BufferUsageFlags::INDEX_BUFFER)
+            .sharing_mode(vk::SharingMode::EXCLUSIVE);
+
+        let buffer = unsafe { self.device.create_buffer(&buffer_info, None)? };
+        let mem_requirements = unsafe { self.device.get_buffer_memory_requirements(buffer) };
+
+        let alloc_info = vk::MemoryAllocateInfo::default()
+            .allocation_size(mem_requirements.size)
+            .memory_type_index(self.find_memory_type(
+                mem_requirements.memory_type_bits,
+                vk::MemoryPropertyFlags::DEVICE_LOCAL,
+            )?);
+
+        let buffer_memory = unsafe { self.device.allocate_memory(&alloc_info, None)? };
+        unsafe { self.device.bind_buffer_memory(buffer, buffer_memory, 0)? };
+
+        // copy
+        let cmd = self.begin_single_time_commands(command_pool);
+        unsafe {
+            let copy_region = vk::BufferCopy::default().size(buffer_size);
+            self.device
+                .cmd_copy_buffer(cmd, staging_buffer, buffer, &[copy_region]);
+        }
+        let queue = self.queues[self.queue_families.transfer as usize];
+        self.end_single_time_commands(cmd, queue, command_pool);
+
+        unsafe {
+            self.device.destroy_buffer(staging_buffer, None);
+            self.device.free_memory(staging_memory, None);
+        }
+
+        Ok((buffer, buffer_memory))
     }
 }

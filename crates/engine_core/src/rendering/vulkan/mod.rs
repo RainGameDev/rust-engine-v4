@@ -9,12 +9,15 @@ use std::{
 };
 use winit::{event_loop::ActiveEventLoop, window::Window};
 
-use crate::rendering::vulkan::{
-    context::{RenderingContextAttributes, VulkanRenderingContext},
-    frame::VulkanFrame,
-    image::ImageLayouts,
-    queue::queue_family_picker,
-    swapchain::VulkanSwapchain,
+use crate::rendering::{
+    core::model::GpuMesh,
+    vulkan::{
+        context::{RenderingContextAttributes, VulkanRenderingContext},
+        frame::VulkanFrame,
+        image::ImageLayouts,
+        queue::queue_family_picker,
+        swapchain::VulkanSwapchain,
+    },
 };
 
 pub mod context;
@@ -158,7 +161,7 @@ impl VulkanRenderer {
         }
     }
 
-    pub fn render(&mut self) -> anyhow::Result<()> {
+    pub fn render(&mut self, meshes: Vec<GpuMesh>) -> anyhow::Result<()> {
         let frame = &self.frames[self.current_frame];
 
         unsafe {
@@ -224,7 +227,30 @@ impl VulkanRenderer {
                 vk::PipelineBindPoint::GRAPHICS,
                 self.pipeline,
             );
-            // causes a segfault
+
+            for mesh in meshes {
+                self.context.device.cmd_bind_vertex_buffers(
+                    frame.command_buffer,
+                    0,
+                    &[mesh.vertex_buffer],
+                    &[0],
+                );
+                self.context.device.cmd_bind_index_buffer(
+                    frame.command_buffer,
+                    mesh.index_buffer,
+                    0,
+                    vk::IndexType::UINT32,
+                );
+                self.context.device.cmd_draw_indexed(
+                    frame.command_buffer,
+                    mesh.index_count,
+                    1,
+                    0,
+                    0,
+                    0,
+                );
+            }
+
             self.context
                 .device
                 .cmd_draw(frame.command_buffer, 3, 1, 0, 0);

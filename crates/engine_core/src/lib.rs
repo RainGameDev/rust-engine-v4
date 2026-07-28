@@ -16,6 +16,8 @@ impl Engine {
     pub fn new() -> Self {
         Self {}
     }
+
+    pub fn return_renderable() {}
 }
 
 impl Default for Engine {

@@ -6,8 +6,11 @@ use winit::{
     window::WindowId,
 };
 
-use crate::Engine;
-use crate::rendering::vulkan::{RenderingInfo, VulkanRenderer};
+use crate::rendering::{
+    core::model::raw_mesh_to_gpu_mesh,
+    vulkan::{RenderingInfo, VulkanRenderer},
+};
+use crate::{Engine, rendering::core::model::cube_mesh};
 
 /// App that runs the window, and engine
 pub struct WindowApp {
@@ -53,7 +56,14 @@ impl ApplicationHandler for WindowApp {
             }
             WindowEvent::RedrawRequested => {
                 if let Some(renderer) = &mut self.renderer {
-                    renderer.render().unwrap();
+                    let context = &self.rendering_info.as_ref().unwrap().context;
+                    let gpu_mesh = raw_mesh_to_gpu_mesh(
+                        cube_mesh([10.0, 10.0, 10.0], "".to_string()),
+                        renderer,
+                        context,
+                    )
+                    .unwrap();
+                    renderer.render(vec![gpu_mesh]).unwrap();
                 }
             }
             _ => {}
