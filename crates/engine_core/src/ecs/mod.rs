@@ -7,10 +7,13 @@ pub mod systems;
 use std::any::TypeId;
 use std::collections::HashMap;
 
+use anyhow::Result;
+
 use crate::ecs::components::archetype::{Archetype, ArchetypeSignature};
 use crate::ecs::components::component_registry::find_registration;
 use crate::ecs::components::{BoxedComponent, Component};
 use crate::ecs::entities::Entity;
+use crate::ecs::resources::{Resource, ResourceMap};
 
 /// Where a given entity currently lives: which archetype, and which row within it.
 #[derive(Clone, Copy)]
@@ -31,6 +34,9 @@ pub struct World {
     archetypes: Vec<Archetype>,
     /// Lookup from a component signature to its archetypes index.
     archetype_index: HashMap<ArchetypeSignature, usize>,
+
+    /// All the resources in the world.
+    resource_map: ResourceMap,
 }
 
 impl Default for World {
@@ -47,12 +53,15 @@ impl World {
             locations: HashMap::new(),
             archetypes: Vec::new(),
             archetype_index: HashMap::new(),
+            resource_map: ResourceMap::default(),
         };
         // Archetype 0 is always the empty archetype.
         world.archetypes.push(Archetype::new(Vec::new()));
         world.archetype_index.insert(Vec::new(), 0);
         world
     }
+
+    // --- Entities ---
 
     /// Spawns a new entity with no components.
     pub fn spawn(&mut self) -> Entity {
@@ -80,6 +89,8 @@ impl World {
         self.free_indices.push(entity.index);
         true
     }
+
+    // --- Components ---
 
     /// Adds component of type `T` to the provided entity.
     pub fn add_component<T: Component>(&mut self, entity: Entity, component: T) {
@@ -128,6 +139,26 @@ impl World {
 
         let new_archetype_id = self.get_or_create_archetype(new_sig);
         self.move_entity(entity, loc, new_archetype_id, None);
+    }
+
+    // --- Resources ---
+
+    /// Adds the resource of type `T` from the world if it doesn't exists.
+    pub fn add_resource<T: Resource>(&mut self, resource: T) {
+        self.resource_map.insert(resource);
+    }
+
+    /// Removes the resource of type `T` from the world if it exists.
+    pub fn remove_resource<T: Resource>(&mut self) {
+        self.resource_map.remove::<T>();
+    }
+    /// Returns the resource of type `T` immutably.
+    pub fn get<T: Resource>(&mut self) -> Result<&T> {
+        self.resource_map.get::<T>()
+    }
+    /// Returns the resource of type `T` mutably.
+    pub fn get_mut<T: Resource>(&mut self) -> Result<&mut T> {
+        self.resource_map.get_mut::<T>()
     }
 
     // --- internal helpers ---

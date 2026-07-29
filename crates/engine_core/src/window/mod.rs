@@ -10,7 +10,7 @@ use crate::rendering::{
     core::{frame_info::update_camera_aspect_ratio, model::raw_mesh_to_gpu_mesh},
     vulkan::{RenderingInfo, VulkanRenderer},
 };
-use crate::{Engine, rendering::core::model::cube_mesh};
+use crate::{Engine, log_error, rendering::core::model::cube_mesh};
 
 /// App that runs the window, and engine
 pub struct App {
@@ -70,7 +70,7 @@ impl ApplicationHandler for App {
                     .unwrap();
 
                     let Some(mut frame_info) = self.engine.return_renderable() else {
-                        println!("No active camera, not rendering");
+                        log_error!("No active camera, not rendering");
                         return;
                     };
 
