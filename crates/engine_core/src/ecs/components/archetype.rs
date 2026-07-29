@@ -153,6 +153,8 @@ impl Drop for Column {
         }
     }
 }
+
+#[allow(unused)]
 impl Archetype {
     /// Creates an empty archetype for the given signature.
     pub(crate) fn new(signature: ArchetypeSignature) -> Self {

@@ -7,13 +7,14 @@ pub mod systems;
 use std::any::TypeId;
 use std::collections::HashMap;
 
-use crate::ecs::components::BoxedComponent;
 use crate::ecs::components::archetype::{Archetype, ArchetypeSignature};
 use crate::ecs::components::component_registry::find_registration;
+use crate::ecs::components::{BoxedComponent, Component};
 use crate::ecs::entities::Entity;
+
 /// Where a given entity currently lives: which archetype, and which row within it.
 #[derive(Clone, Copy)]
-struct EntityLocation {
+pub(crate) struct EntityLocation {
     archetype_id: usize,
     row: usize,
 }
@@ -80,11 +81,16 @@ impl World {
         true
     }
 
+    /// Adds component of type `T` to the provided entity.
+    pub fn add_component<T: Component>(&mut self, entity: Entity, component: T) {
+        self.insert_component(entity, Box::new(component));
+    }
+
     /// Dynamic insertion path:
     /// takes a component,
     /// moves the entity to the archetype for,
     /// and writes the value into that archetype's typed Column via the type-erased push.
-    pub fn insert_component(&mut self, entity: Entity, component: BoxedComponent) {
+    pub(crate) fn insert_component(&mut self, entity: Entity, component: BoxedComponent) {
         let Some(&loc) = self.locations.get(&entity) else {
             return;
         };

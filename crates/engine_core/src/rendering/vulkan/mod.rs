@@ -3,14 +3,11 @@ use ash::vk::{
     self, ClearColorValue, CommandBufferResetFlags, CommandPool, Pipeline, PipelineLayout,
     PipelineLayoutCreateInfo,
 };
-use std::{
-    fs,
-    sync::{Arc, Mutex},
-};
+use std::{fs, sync::Arc};
 use winit::{event_loop::ActiveEventLoop, window::Window};
 
 use crate::rendering::{
-    core::model::GpuMesh,
+    core::frame_info::{FrameInfo, PushConstants, matrix_to_push_constant},
     vulkan::{
         context::{RenderingContextAttributes, VulkanRenderingContext},
         frame::VulkanFrame,
@@ -39,16 +36,14 @@ impl RenderingInfo {
     pub fn new(event_loop: &ActiveEventLoop) -> Self {
         let window = Arc::new(event_loop.create_window(Default::default()).unwrap());
 
-        let rendering_info = RenderingInfo {
+        RenderingInfo {
             context: VulkanRenderingContext::new(RenderingContextAttributes {
                 compatability_window: &window,
                 queue_family_picker: queue_family_picker::single_queue_family,
             })
             .unwrap(),
             window,
-        };
-
-        rendering_info
+        }
     }
 }
 
@@ -76,7 +71,7 @@ fn load_shader_module(
 
 impl VulkanRenderer {
     pub fn new(rendering_info: RenderingInfo) -> anyhow::Result<Self> {
-        let mut swapchain = VulkanSwapchain::new(
+        let swapchain = VulkanSwapchain::new(
             rendering_info.context.clone().into(),
             rendering_info.window.clone(),
         )?;
@@ -101,7 +96,6 @@ impl VulkanRenderer {
                 swapchain.extent,
                 swapchain.format,
                 pipeline_layout,
-                Default::default(),
             )?;
 
             context.device.destroy_shader_module(vertex_shader, None);
@@ -161,7 +155,7 @@ impl VulkanRenderer {
         }
     }
 
-    pub fn render(&mut self, meshes: Vec<GpuMesh>) -> anyhow::Result<()> {
+    pub fn render(&mut self, frame_info: FrameInfo) -> anyhow::Result<()> {
         let frame = &self.frames[self.current_frame];
 
         unsafe {
@@ -228,7 +222,23 @@ impl VulkanRenderer {
                 self.pipeline,
             );
 
-            for mesh in meshes {
+            for mesh in frame_info.meshes {
+                let mvp = frame_info.view_projection;
+                let push_constants = PushConstants {
+                    mvp: matrix_to_push_constant(&mvp),
+                };
+
+                self.context.device.cmd_push_constants(
+                    frame.command_buffer,
+                    self.pipeline_layout,
+                    vk::ShaderStageFlags::VERTEX,
+                    0,
+                    std::slice::from_raw_parts(
+                        &push_constants as *const PushConstants as *const u8,
+                        std::mem::size_of::<PushConstants>(),
+                    ),
+                );
+
                 self.context.device.cmd_bind_vertex_buffers(
                     frame.command_buffer,
                     0,

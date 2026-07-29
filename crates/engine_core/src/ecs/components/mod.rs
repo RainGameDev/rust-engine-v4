@@ -1,5 +1,6 @@
 pub mod archetype;
 pub mod component_registry;
+pub mod engine_components;
 
 use std::any::Any;
 use std::fmt::Debug;

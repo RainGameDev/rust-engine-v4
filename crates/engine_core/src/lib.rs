@@ -11,19 +11,55 @@ pub mod window;
 mod tests;
 
 pub use inventory;
-pub use macros::Component;
+pub use macros::{Component, Resource};
 
 use anyhow::Result;
+use nalgebra::Matrix4;
+
+use crate::{
+    ecs::{
+        World,
+        components::engine_components::{
+            camera::{Camera, GameCamera},
+            transform::{GlobalTransform, Transform},
+        },
+        query::query::Query,
+    },
+    rendering::core::frame_info::FrameInfo,
+};
 
 /// Engine handler
-pub struct Engine {}
+pub struct Engine {
+    pub ecs_world: World,
+}
 
 impl Engine {
     pub fn new() -> Self {
-        Self {}
+        let mut ecs_world = World::default();
+        let camera = ecs_world.spawn();
+        ecs_world.insert_component(camera, Box::new(Transform::identity()));
+        ecs_world.insert_component(
+            camera,
+            Box::new(GlobalTransform::from_matrix(Matrix4::identity())),
+        );
+        ecs_world.insert_component(
+            camera,
+            Box::new(Camera::perspective(60.0, 16.0 / 9.0, 0.1, 1000.0)),
+        );
+        ecs_world.insert_component(camera, Box::new(GameCamera));
+        Self { ecs_world }
     }
 
-    pub fn return_renderable() {}
+    pub fn return_renderable(&self) -> Option<FrameInfo> {
+        let camera_query: Query<(&Camera, &GlobalTransform)> = Query::new(&self.ecs_world);
+        let (camera, camera_global) = camera_query.iter().find(|(c, _)| c.is_active)?;
+        let view_projection = camera.view_projection_matrix(camera_global);
+
+        Some(FrameInfo {
+            view_projection,
+            meshes: Vec::new(),
+        })
+    }
 }
 
 impl Default for Engine {

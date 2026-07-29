@@ -1,19 +1,17 @@
 use std::any::TypeId;
-use std::marker::PhantomData;
 
 use crate::ecs::components::Component;
 use crate::ecs::components::archetype::Archetype;
 use crate::ecs::entities::Entity;
 
-/// Defines what a query term fetches per-row, and which archetypes qualify.
+/// Defines what a query term fetches per row, and which archetypes qualify.
 /// Implemented for `Entity`, `&T`, `&mut T`, `Option<Q>`, and tuples of these.
 pub unsafe trait WorldQuery {
-    /// The value produced per matching entity. Generic over the borrow lifetime
-    /// of the underlying archetype storage.
+    /// The value produced per matching entity.
+    /// Generic over the borrow lifetime of the underlying archetype storage.
     type Item<'w>;
 
     /// Whether this term's data requirements are satisfied by `archetype`
-    /// (ignores entities/filters — purely "does the shape match").
     fn matches_archetype(archetype: &Archetype) -> bool;
 
     /// Reads/writes the value for `row` within `archetype`.
@@ -42,8 +40,10 @@ unsafe impl<T: Component> WorldQuery for &T {
     }
 
     unsafe fn fetch<'w>(archetype: &'w Archetype, row: usize) -> Self::Item<'w> {
-        let column = archetype.columns.get(&TypeId::of::<T>()).unwrap_unchecked();
-        &*(column.get_raw(row) as *const T)
+        unsafe {
+            let column = archetype.columns.get(&TypeId::of::<T>()).unwrap_unchecked();
+            &*(column.get_raw(row) as *const T)
+        }
     }
 }
 
@@ -55,8 +55,10 @@ unsafe impl<T: Component> WorldQuery for &mut T {
     }
 
     unsafe fn fetch<'w>(archetype: &'w Archetype, row: usize) -> Self::Item<'w> {
-        let column = archetype.columns.get(&TypeId::of::<T>()).unwrap_unchecked();
-        &mut *(column.get_raw(row) as *mut T)
+        unsafe {
+            let column = archetype.columns.get(&TypeId::of::<T>()).unwrap_unchecked();
+            &mut *(column.get_raw(row) as *mut T)
+        }
     }
 }
 
@@ -70,10 +72,12 @@ unsafe impl<Q: WorldQuery> WorldQuery for Option<Q> {
     }
 
     unsafe fn fetch<'w>(archetype: &'w Archetype, row: usize) -> Self::Item<'w> {
-        if Q::matches_archetype(archetype) {
-            Some(Q::fetch(archetype, row))
-        } else {
-            None
+        unsafe {
+            if Q::matches_archetype(archetype) {
+                Some(Q::fetch(archetype, row))
+            } else {
+                None
+            }
         }
     }
 }
@@ -89,7 +93,9 @@ macro_rules! impl_world_query_tuple {
             }
 
             unsafe fn fetch<'w>(archetype: &'w Archetype, row: usize) -> Self::Item<'w> {
-                ($($t::fetch(archetype, row),)+)
+                unsafe{
+                    ($($t::fetch(archetype, row),)+)
+                }
             }
         }
     };

@@ -7,19 +7,19 @@ use winit::{
 };
 
 use crate::rendering::{
-    core::model::raw_mesh_to_gpu_mesh,
+    core::{frame_info::update_camera_aspect_ratio, model::raw_mesh_to_gpu_mesh},
     vulkan::{RenderingInfo, VulkanRenderer},
 };
 use crate::{Engine, rendering::core::model::cube_mesh};
 
 /// App that runs the window, and engine
-pub struct WindowApp {
+pub struct App {
     rendering_info: Option<RenderingInfo>,
     renderer: Option<VulkanRenderer>,
     engine: Engine,
 }
 
-impl WindowApp {
+impl App {
     pub fn new(engine: Engine) -> Self {
         Self {
             rendering_info: None,
@@ -29,7 +29,7 @@ impl WindowApp {
     }
 }
 
-impl ApplicationHandler for WindowApp {
+impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         self.rendering_info = Some(RenderingInfo::new(event_loop));
         self.renderer = Some(VulkanRenderer::new(self.rendering_info.clone().unwrap()).unwrap());
@@ -52,18 +52,31 @@ impl ApplicationHandler for WindowApp {
             WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. } => {
                 if let Some(renderer) = &mut self.renderer {
                     renderer.resize().unwrap();
+                    update_camera_aspect_ratio(
+                        &mut self.engine.ecs_world,
+                        renderer.swapchain.extent.width,
+                        renderer.swapchain.extent.height,
+                    );
                 }
             }
             WindowEvent::RedrawRequested => {
                 if let Some(renderer) = &mut self.renderer {
                     let context = &self.rendering_info.as_ref().unwrap().context;
                     let gpu_mesh = raw_mesh_to_gpu_mesh(
-                        cube_mesh([10.0, 10.0, 10.0], "".to_string()),
+                        cube_mesh([0.0, 0.0, -10.0], "".to_string()),
                         renderer,
                         context,
                     )
                     .unwrap();
-                    renderer.render(vec![gpu_mesh]).unwrap();
+
+                    let Some(mut frame_info) = self.engine.return_renderable() else {
+                        println!("No active camera, not rendering");
+                        return;
+                    };
+
+                    frame_info.meshes.push(gpu_mesh);
+
+                    renderer.render(frame_info).unwrap();
                 }
             }
             _ => {}
@@ -74,7 +87,7 @@ impl ApplicationHandler for WindowApp {
 }
 
 pub fn run(engine: Engine) -> Result<()> {
-    let mut app = WindowApp::new(engine);
+    let mut app = App::new(engine);
     let event_loop = EventLoop::new()?;
     event_loop.run_app(&mut app)?;
     Ok(())

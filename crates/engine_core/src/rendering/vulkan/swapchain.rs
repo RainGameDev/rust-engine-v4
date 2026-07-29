@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use anyhow::Result;
-use ash::vk::{self, DeviceMemory, Extent2D, Format, ImageView, SwapchainKHR};
+use ash::vk::{self, Extent2D, Format, ImageView, SwapchainKHR};
 use winit::window::Window;
 
 use crate::rendering::vulkan::{context::VulkanRenderingContext, image::Image, surface::Surface};
