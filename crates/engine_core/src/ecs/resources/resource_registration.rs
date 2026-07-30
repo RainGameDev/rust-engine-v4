@@ -12,12 +12,12 @@ pub struct ResourceRegistration {
 inventory::collect!(ResourceRegistration);
 
 /// Looks up registration info for a resource type by its `TypeId`
-pub fn find_registration(type_id: TypeId) -> Option<&'static ResourceRegistration> {
+pub fn find_resource_registration(type_id: TypeId) -> Option<&'static ResourceRegistration> {
     inventory::iter::<ResourceRegistration>().find(|reg| (reg.type_id)() == type_id)
 }
 
 /// Looks up registration info by type name
 /// this is mainly for serialisation
-pub fn find_registration_by_name(name: &str) -> Option<&'static ResourceRegistration> {
+pub fn find_resource_registration_by_name(name: &str) -> Option<&'static ResourceRegistration> {
     inventory::iter::<ResourceRegistration>().find(|reg| reg.type_name == name)
 }

@@ -17,6 +17,7 @@ use anyhow::Result;
 use nalgebra::Matrix4;
 
 use crate::{
+    assets::AssetRegistration,
     ecs::{
         World,
         components::engine_components::{
@@ -47,6 +48,13 @@ impl Engine {
             Box::new(Camera::perspective(60.0, 16.0 / 9.0, 0.1, 1000.0)),
         );
         ecs_world.insert_component(camera, Box::new(GameCamera));
+
+        for registration in inventory::iter::<AssetRegistration> {
+            let type_id = (registration.type_id)();
+            let asset_map = (registration.create_asset_map)();
+            ecs_world.assets.insert(type_id, asset_map);
+        }
+
         Self { ecs_world }
     }
 

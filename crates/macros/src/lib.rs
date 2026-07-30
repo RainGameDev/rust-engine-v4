@@ -72,3 +72,36 @@ pub fn derive_resource(input: TokenStream) -> TokenStream {
 
     expanded.into()
 }
+
+#[proc_macro_derive(Asset)]
+pub fn derive_asset(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    let ident = &input.ident;
+    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
+    let name_str = input.ident.to_string();
+
+    let engine_core = match crate_name("engine_core") {
+        Ok(FoundCrate::Itself) => quote!(crate),
+        Ok(FoundCrate::Name(name)) => {
+            let ident = Ident::new(&name, Span::call_site());
+            quote!(::#ident)
+        }
+        Err(_) => quote!(::engine_core),
+    };
+
+    let expanded = quote! {
+        impl #impl_generics #engine_core::assets::Asset for #ident #ty_generics #where_clause {}
+
+        #engine_core::inventory::submit! {
+            #engine_core::assets::AssetRegistration{
+                type_id: ::std::any::TypeId::of::<#ident>,
+                type_name: #name_str,
+        create_asset_map: || Box::new(#engine_core::assets::core::storage::AssetMap::<#ident>::default()),
+            }
+        }
+
+
+    };
+
+    TokenStream::from(expanded)
+}

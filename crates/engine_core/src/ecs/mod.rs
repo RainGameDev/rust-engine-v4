@@ -4,13 +4,16 @@ pub mod query;
 pub mod resources;
 pub mod systems;
 
-use std::any::TypeId;
+use std::any::{Any, TypeId};
 use std::collections::HashMap;
 
 use anyhow::Result;
 
+use crate::assets::Asset;
+use crate::assets::core::handle::Handle;
+use crate::assets::core::storage::AssetMap;
 use crate::ecs::components::archetype::{Archetype, ArchetypeSignature};
-use crate::ecs::components::component_registry::find_registration;
+use crate::ecs::components::component_registry::find_component_registration;
 use crate::ecs::components::{BoxedComponent, Component};
 use crate::ecs::entities::Entity;
 use crate::ecs::resources::{Resource, ResourceMap};
@@ -37,6 +40,10 @@ pub struct World {
 
     /// All the resources in the world.
     resource_map: ResourceMap,
+
+    /// All the assets in the world.
+    /// Stored has (Id, AssetMap)
+    pub(crate) assets: HashMap<TypeId, Box<dyn Any + Send + Sync>>,
 }
 
 impl Default for World {
@@ -54,6 +61,7 @@ impl World {
             archetypes: Vec::new(),
             archetype_index: HashMap::new(),
             resource_map: ResourceMap::default(),
+            assets: HashMap::new(),
         };
         // Archetype 0 is always the empty archetype.
         world.archetypes.push(Archetype::new(Vec::new()));
@@ -88,6 +96,43 @@ impl World {
         self.entity_slots[entity.index as usize] = None;
         self.free_indices.push(entity.index);
         true
+    }
+    // --- Assets ---
+
+    /// Returns the AssetMap of type `T` mutibly.
+    fn asset_map_mut<T: Asset>(&mut self) -> &mut AssetMap<T> {
+        self.assets
+            .entry(TypeId::of::<T>())
+            .or_insert_with(|| Box::new(AssetMap::<T>::default()))
+            .downcast_mut::<AssetMap<T>>()
+            .expect("asset TypeId collision")
+    }
+
+    /// Returns the AssetMap of type `T` immutibly.
+    fn asset_map<T: Asset>(&self) -> Option<&AssetMap<T>> {
+        self.assets
+            .get(&TypeId::of::<T>())?
+            .downcast_ref::<AssetMap<T>>()
+    }
+
+    /// Adds asset `T` to it's map.
+    pub fn add_asset<T: Asset>(&mut self, value: T) -> Handle<T> {
+        self.asset_map_mut::<T>().add(value)
+    }
+
+    /// Gets the asset of `handle` immutibly.
+    pub fn get_asset<T: Asset>(&self, handle: Handle<T>) -> Option<&T> {
+        self.asset_map::<T>()?.get(handle)
+    }
+
+    /// Gets the asset of `handle` mutibly.
+    pub fn get_asset_mut<T: Asset>(&mut self, handle: Handle<T>) -> Option<&mut T> {
+        self.asset_map_mut::<T>().get_mut(handle)
+    }
+
+    /// Removes the asset of `handle` from it's respective map.
+    pub fn remove_asset<T: Asset>(&mut self, handle: Handle<T>) -> Option<T> {
+        self.asset_map_mut::<T>().remove(handle)
     }
 
     // --- Components ---
@@ -187,7 +232,7 @@ impl World {
         let mut archetype = Archetype::new(signature.clone());
 
         for &type_id in &signature {
-            let registration = find_registration(type_id).unwrap_or_else(|| {
+            let registration = find_component_registration(type_id).unwrap_or_else(|| {
                 panic!(
                     "component with TypeId {:?} was never registered — did you forget #[derive(Component)]?",
                     type_id

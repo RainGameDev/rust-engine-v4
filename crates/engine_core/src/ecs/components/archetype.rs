@@ -6,7 +6,7 @@ use std::{
 
 use crate::ecs::{
     EntityLocation,
-    components::{BoxedComponent, Component},
+    components::{BoxedComponent, Component, component_registry::find_component_registration},
     entities::Entity,
 };
 
@@ -308,7 +308,7 @@ impl std::fmt::Debug for Archetype {
             .signature
             .iter()
             .map(|type_id| {
-                crate::ecs::components::component_registry::find_registration(*type_id)
+                find_component_registration(*type_id)
                     .map(|reg| reg.type_name)
                     .unwrap_or("<unregistered>")
             })

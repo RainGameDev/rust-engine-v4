@@ -15,12 +15,12 @@ pub struct ComponentRegistration {
 inventory::collect!(ComponentRegistration);
 
 /// Looks up registration info for a component type by its `TypeId`
-pub fn find_registration(type_id: TypeId) -> Option<&'static ComponentRegistration> {
+pub fn find_component_registration(type_id: TypeId) -> Option<&'static ComponentRegistration> {
     inventory::iter::<ComponentRegistration>().find(|reg| (reg.type_id)() == type_id)
 }
 
 /// Looks up registration info by type name
 /// this is mainly for serialisation
-pub fn find_registration_by_name(name: &str) -> Option<&'static ComponentRegistration> {
+pub fn find_component_registration_by_name(name: &str) -> Option<&'static ComponentRegistration> {
     inventory::iter::<ComponentRegistration>().find(|reg| reg.type_name == name)
 }
