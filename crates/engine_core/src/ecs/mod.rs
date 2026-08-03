@@ -14,6 +14,7 @@ use crate::assets::core::handle::Handle;
 use crate::assets::core::storage::AssetMap;
 use crate::ecs::components::archetype::{Archetype, ArchetypeSignature};
 use crate::ecs::components::component_registry::find_component_registration;
+use crate::ecs::components::engine_components::hierarchy::{Children, Parent};
 use crate::ecs::components::{BoxedComponent, Component};
 use crate::ecs::entities::Entity;
 use crate::ecs::resources::{Resource, ResourceMap};
@@ -67,6 +68,28 @@ impl World {
         world.archetypes.push(Archetype::new(Vec::new()));
         world.archetype_index.insert(Vec::new(), 0);
         world
+    }
+
+    // --- Hierarchy ---
+    pub fn set_parent(&mut self, child: Entity, new_parent: Option<Entity>) {
+        if let Some(Parent(old_parent)) = self.get_component::<Parent>(child).cloned() {
+            if let Some(children) = self.get_component_mut::<Children>(old_parent) {
+                children.0.retain(|&e| e != child);
+            }
+        }
+
+        match new_parent {
+            Some(parent) => {
+                self.add_component(child, Parent(parent));
+                match self.get_component_mut::<Children>(parent) {
+                    Some(children) => children.0.push(child),
+                    None => self.add_component(parent, Children(vec![child])),
+                }
+            }
+            None => {
+                self.remove_component::<Parent>(child);
+            }
+        }
     }
 
     // --- Entities ---
@@ -169,7 +192,16 @@ impl World {
     }
 
     /// Removes a component type from an entity, moving it to the archetype without that type.
-    pub fn remove_component(&mut self, entity: Entity, type_id: TypeId) {
+    pub fn remove_component<T: Component>(&mut self, entity: Entity) -> Option<T>
+    where
+        T: Clone,
+    {
+        let value = self.get_component::<T>(entity)?.clone();
+        // reuses your existing remove_component(entity, TypeId) archetype-move logic
+        self.remove_component_by_type_id(entity, TypeId::of::<T>());
+        Some(value)
+    }
+    pub fn remove_component_by_type_id(&mut self, entity: Entity, type_id: TypeId) {
         let Some(&loc) = self.locations.get(&entity) else {
             return;
         };
@@ -184,6 +216,20 @@ impl World {
 
         let new_archetype_id = self.get_or_create_archetype(new_sig);
         self.move_entity(entity, loc, new_archetype_id, None);
+    }
+
+    pub fn get_component<T: Component>(&self, entity: Entity) -> Option<&T> {
+        let location = self.locations.get(&entity)?;
+        let archetype = &self.archetypes[location.archetype_id];
+        let column = archetype.columns.get(&TypeId::of::<T>())?;
+        Some(unsafe { &*(column.get_raw(location.row) as *const T) })
+    }
+
+    pub fn get_component_mut<T: Component>(&mut self, entity: Entity) -> Option<&mut T> {
+        let location = *self.locations.get(&entity)?;
+        let archetype = &mut self.archetypes[location.archetype_id];
+        let column = archetype.columns.get_mut(&TypeId::of::<T>())?;
+        Some(unsafe { &mut *(column.get_raw(location.row) as *mut T) })
     }
 
     // --- Resources ---

@@ -1,7 +1,7 @@
 use macros::Component;
 use nalgebra::{Matrix4, Orthographic3, Perspective3, Point3, Vector3};
 
-use crate::ecs::components::engine_components::transform::GlobalTransform;
+use crate::ecs::components::engine_components::transform::Transform;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Projection {
@@ -110,14 +110,14 @@ impl Camera {
     }
 
     /// Builds the view matrix from this camera entity's world position/rotation.
-    pub fn view_matrix(&self, global: &GlobalTransform) -> Matrix4<f32> {
-        let eye = Point3::from(global.translation);
+    pub fn view_matrix(&self, global: &Transform) -> Matrix4<f32> {
+        let eye = Point3::from(global.global_position);
         let forward = global.rotation * -Vector3::z();
         let up = global.rotation * Vector3::y();
         Matrix4::look_at_rh(&eye, &(eye + forward), &up)
     }
 
-    pub fn view_projection_matrix(&self, global: &GlobalTransform) -> Matrix4<f32> {
+    pub fn view_projection_matrix(&self, global: &Transform) -> Matrix4<f32> {
         self.projection_matrix() * self.view_matrix(global)
     }
 }

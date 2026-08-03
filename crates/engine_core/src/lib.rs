@@ -14,7 +14,7 @@ pub use inventory;
 pub use macros::{Component, Resource};
 
 use anyhow::Result;
-use nalgebra::Matrix4;
+use nalgebra::{Matrix4, Vector3};
 
 use crate::{
     assets::AssetRegistration,
@@ -22,7 +22,7 @@ use crate::{
         World,
         components::engine_components::{
             camera::{Camera, GameCamera},
-            transform::{GlobalTransform, Transform},
+            transform::Transform,
         },
         query::query::Query,
     },
@@ -38,10 +38,9 @@ impl Engine {
     pub fn new() -> Self {
         let mut ecs_world = World::default();
         let camera = ecs_world.spawn();
-        ecs_world.insert_component(camera, Box::new(Transform::identity()));
         ecs_world.insert_component(
             camera,
-            Box::new(GlobalTransform::from_matrix(Matrix4::identity())),
+            Box::new(Transform::from_position(Vector3::new(0.0, 0.0, 100.0))),
         );
         ecs_world.insert_component(
             camera,
@@ -59,7 +58,7 @@ impl Engine {
     }
 
     pub fn return_renderable(&self) -> Option<FrameInfo> {
-        let camera_query: Query<(&Camera, &GlobalTransform)> = Query::new(&self.ecs_world);
+        let camera_query: Query<(&Camera, &Transform)> = Query::new(&self.ecs_world);
         let (camera, camera_global) = camera_query.iter().find(|(c, _)| c.is_active)?;
         let view_projection = camera.view_projection_matrix(camera_global);
 

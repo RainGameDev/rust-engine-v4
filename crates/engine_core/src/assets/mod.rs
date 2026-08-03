@@ -6,6 +6,7 @@ use std::{
 use macros::Asset;
 
 pub mod core;
+pub mod models;
 
 pub trait Asset: Send + Sync + 'static {}
 

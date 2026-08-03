@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use anyhow::Result;
 use winit::{
     application::ApplicationHandler,
@@ -6,11 +8,17 @@ use winit::{
     window::WindowId,
 };
 
-use crate::rendering::{
-    core::{frame_info::update_camera_aspect_ratio, model::raw_mesh_to_gpu_mesh},
-    vulkan::{RenderingInfo, VulkanRenderer},
+use crate::{
+    Engine, ecs::components::engine_components::transform::transform_update, log_error,
+    rendering::core::model::cube_mesh,
 };
-use crate::{Engine, log_error, rendering::core::model::cube_mesh};
+use crate::{
+    assets::models::gltf::load_gltf_file,
+    rendering::{
+        core::{frame_info::update_camera_aspect_ratio, model::raw_mesh_to_gpu_mesh},
+        vulkan::{RenderingInfo, VulkanRenderer},
+    },
+};
 
 /// App that runs the window, and engine
 pub struct App {
@@ -61,11 +69,17 @@ impl ApplicationHandler for App {
             }
             WindowEvent::RedrawRequested => {
                 if let Some(renderer) = &mut self.renderer {
+                    transform_update(&mut self.engine.ecs_world);
+
                     let context = &self.rendering_info.as_ref().unwrap().context;
-                    let gpu_mesh = raw_mesh_to_gpu_mesh(
-                        cube_mesh([0.0, 0.0, -10.0], "".to_string()),
-                        renderer,
+                    let gpu_mesh = load_gltf_file(
+                        &Path::new(&format!(
+                            "{}/{}meshes/test.glb",
+                            env!("CARGO_MANIFEST_DIR"),
+                            "res/"
+                        )),
                         context,
+                        renderer.command_pool,
                     )
                     .unwrap();
 
@@ -74,7 +88,9 @@ impl ApplicationHandler for App {
                         return;
                     };
 
-                    frame_info.meshes.push(gpu_mesh);
+                    for mesh in gpu_mesh {
+                        frame_info.meshes.push(mesh);
+                    }
 
                     renderer.render(frame_info).unwrap();
                 }
