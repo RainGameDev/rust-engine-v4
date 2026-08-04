@@ -4,8 +4,6 @@ use proc_macro2::Span;
 use quote::quote;
 use syn::{DeriveInput, Ident, parse_macro_input};
 
-
-
 fn resolve_engine_core() -> proc_macro2::TokenStream {
     match crate_name("engine_core") {
         Ok(FoundCrate::Itself) => quote!(crate),
@@ -162,7 +160,7 @@ fn system_attribute(item: TokenStream, kind: &str, takes_delta: bool) -> TokenSt
             fetch_exprs.push(quote! { delta });
         } else {
             fetch_exprs.push(quote! {
-                <#ty as #engine_core::ecs::systems::SystemParam>::fetch(world)
+                <#ty as #engine_core::ecs::systems::param::SystemParam>::fetch(world)?
             });
         }
     }

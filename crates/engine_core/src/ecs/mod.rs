@@ -5,6 +5,7 @@ pub mod resources;
 pub mod systems;
 
 use std::any::{Any, TypeId};
+use std::cell::{Ref, RefMut};
 use std::collections::HashMap;
 
 use anyhow::Result;
@@ -253,14 +254,14 @@ impl World {
         self.resource_map.remove::<T>();
     }
     /// Returns the resource of type `T` immutably.
-    pub fn get<T: Resource>(&mut self) -> Result<&T> {
+    pub fn get_resource<T: Resource>(&self) -> Result<Ref<'_, T>> {
         self.resource_map.get::<T>()
     }
+
     /// Returns the resource of type `T` mutably.
-    pub fn get_mut<T: Resource>(&mut self) -> Result<&mut T> {
+    pub fn get_resource_mut<T: Resource>(&self) -> Result<RefMut<'_, T>> {
         self.resource_map.get_mut::<T>()
     }
-
     // --- internal helpers ---
 
     fn allocate_entity(&mut self) -> Entity {
