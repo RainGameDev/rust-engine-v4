@@ -97,7 +97,7 @@ impl LateUpdateSystem {
     }
 }
 
-/// A system that runs at a fixed timestep (20 Hz by default).
+/// A system that runs at a fixed timestep (60 by default).
 #[derive(Clone, Copy)]
 pub struct FixedUpdateSystem {
     pub name: &'static str,
@@ -141,7 +141,7 @@ pub struct EngineTimer(pub f32);
 #[derive(Resource, Debug, Clone, Default)]
 pub struct FixedUpdateTimer {
     pub accumulator: f32,
-    /// Target seconds per fixed tick (default: 1/20 = 0.05s).
+    /// Target seconds per fixed tick (default: 1/60 = 0.0166...s).
     pub fixed_timestep: f32,
     pub last_time: Option<std::time::Instant>,
 }
