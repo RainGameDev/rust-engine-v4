@@ -4,6 +4,19 @@ use proc_macro2::Span;
 use quote::quote;
 use syn::{DeriveInput, Ident, parse_macro_input};
 
+
+
+fn resolve_engine_core() -> proc_macro2::TokenStream {
+    match crate_name("engine_core") {
+        Ok(FoundCrate::Itself) => quote!(crate),
+        Ok(FoundCrate::Name(name)) => {
+            let ident = Ident::new(&name, Span::call_site());
+            quote!(::#ident)
+        }
+        Err(_) => quote!(::engine_core),
+    }
+}
+
 #[proc_macro_derive(Component)]
 pub fn derive_component(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
@@ -104,4 +117,83 @@ pub fn derive_asset(input: TokenStream) -> TokenStream {
     };
 
     TokenStream::from(expanded)
+}
+
+// crates/macros/src/lib.rs
+
+#[proc_macro_attribute]
+pub fn update(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    system_attribute(item, "UpdateSystem", false)
+}
+
+#[proc_macro_attribute]
+pub fn late_update(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    system_attribute(item, "LateUpdateSystem", false)
+}
+
+#[proc_macro_attribute]
+pub fn fixed_update(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    system_attribute(item, "FixedUpdateSystem", true)
+}
+
+fn system_attribute(item: TokenStream, kind: &str, takes_delta: bool) -> TokenStream {
+    let input = parse_macro_input!(item as syn::ItemFn);
+    let fn_ident = &input.sig.ident;
+    let fn_name_str = fn_ident.to_string();
+    let engine_core = resolve_engine_core();
+    let kind_ident = syn::Ident::new(kind, proc_macro2::Span::call_site());
+    let wrapper_ident = syn::Ident::new(&format!("__system_{}", fn_ident), fn_ident.span());
+
+    let mut fetch_exprs = Vec::new();
+    let mut seen_delta = false;
+
+    for arg in &input.sig.inputs {
+        let syn::FnArg::Typed(pat_type) = arg else {
+            panic!("systems cannot take `self`");
+        };
+        let ty = &*pat_type.ty;
+        let is_f32 = matches!(ty, syn::Type::Path(p) if p.path.is_ident("f32"));
+
+        if is_f32 && takes_delta {
+            if seen_delta {
+                panic!("only one f32 (delta) parameter is allowed per fixed_update system");
+            }
+            seen_delta = true;
+            fetch_exprs.push(quote! { delta });
+        } else {
+            fetch_exprs.push(quote! {
+                <#ty as #engine_core::ecs::systems::SystemParam>::fetch(world)
+            });
+        }
+    }
+
+    if takes_delta && !seen_delta {
+        panic!("#[fixed_update] systems must take a `delta: f32` parameter");
+    }
+
+    let wrapper_sig = if takes_delta {
+        quote! { fn #wrapper_ident(world: &mut #engine_core::ecs::World, delta: f32) -> ::anyhow::Result<()> }
+    } else {
+        quote! { fn #wrapper_ident(world: &mut #engine_core::ecs::World) -> ::anyhow::Result<()> }
+    };
+
+    let expanded = quote! {
+        #input
+
+        #[doc(hidden)]
+        #wrapper_sig {
+            let world: &#engine_core::ecs::World = world;
+            #fn_ident(#(#fetch_exprs),*)
+        }
+
+        #engine_core::inventory::submit! {
+            #engine_core::ecs::systems::#kind_ident {
+                name: #fn_name_str,
+                func: #wrapper_ident,
+                priority: 0,
+            }
+        }
+    };
+
+    expanded.into()
 }

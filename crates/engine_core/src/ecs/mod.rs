@@ -70,7 +70,16 @@ impl World {
         world
     }
 
+    // --- Systems ---
+
+    pub fn update() {}
+    pub fn late_update() {}
+    pub fn fixed_update() {}
+    pub fn prerender() {}
+    pub fn start() {}
+
     // --- Hierarchy ---
+
     pub fn set_parent(&mut self, child: Entity, new_parent: Option<Entity>) {
         if let Some(Parent(old_parent)) = self.get_component::<Parent>(child).cloned() {
             if let Some(children) = self.get_component_mut::<Children>(old_parent) {

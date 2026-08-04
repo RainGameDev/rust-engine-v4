@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use anyhow::Result;
+use macros::fixed_update;
 use winit::{
     application::ApplicationHandler,
     event::WindowEvent,
@@ -9,13 +10,17 @@ use winit::{
 };
 
 use crate::{
-    Engine, ecs::components::engine_components::transform::transform_update, log_error,
-    rendering::core::model::cube_mesh,
+    Engine,
+    ecs::{
+        components::engine_components::transform::transform_update,
+        systems::{StartSystem, run_system, scheduler::Schedule},
+    },
+    log_error,
 };
 use crate::{
     assets::models::gltf::load_gltf_file,
     rendering::{
-        core::{frame_info::update_camera_aspect_ratio, model::raw_mesh_to_gpu_mesh},
+        core::frame_info::update_camera_aspect_ratio,
         vulkan::{RenderingInfo, VulkanRenderer},
     },
 };
@@ -25,6 +30,7 @@ pub struct App {
     rendering_info: Option<RenderingInfo>,
     renderer: Option<VulkanRenderer>,
     engine: Engine,
+    schedule: Schedule,
 }
 
 impl App {
@@ -33,6 +39,8 @@ impl App {
             rendering_info: None,
             renderer: None,
             engine,
+            // set to the refresh rate for physics and such
+            schedule: Schedule::new(60.0),
         }
     }
 }
@@ -68,6 +76,7 @@ impl ApplicationHandler for App {
                 }
             }
             WindowEvent::RedrawRequested => {
+                self.schedule.tick(&mut self.engine.ecs_world).unwrap();
                 if let Some(renderer) = &mut self.renderer {
                     transform_update(&mut self.engine.ecs_world);
 
@@ -99,11 +108,16 @@ impl ApplicationHandler for App {
         }
     }
 
-    fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {}
+    fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
+        if let Some(info) = &self.rendering_info {
+            info.window.request_redraw();
+        }
+    }
 }
 
 pub fn run(engine: Engine) -> Result<()> {
     let mut app = App::new(engine);
+    run_system(&mut app.engine.ecs_world, StartSystem::sorted())?;
     let event_loop = EventLoop::new()?;
     event_loop.run_app(&mut app)?;
     Ok(())

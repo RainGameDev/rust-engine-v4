@@ -12,9 +12,10 @@ mod tests;
 
 pub use inventory;
 pub use macros::{Component, Resource};
+pub use macros::{fixed_update, late_update, update};
 
 use anyhow::Result;
-use nalgebra::{Matrix4, Vector3};
+use nalgebra::{ Vector3};
 
 use crate::{
     assets::AssetRegistration,
