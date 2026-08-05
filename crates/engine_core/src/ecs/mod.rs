@@ -1,3 +1,4 @@
+pub mod commands;
 pub mod components;
 pub mod entities;
 pub mod query;
@@ -7,6 +8,8 @@ pub mod systems;
 use std::any::{Any, TypeId};
 use std::cell::{Ref, RefMut};
 use std::collections::HashMap;
+use std::sync::Arc;
+use std::sync::atomic::AtomicU32;
 
 use anyhow::Result;
 
@@ -20,7 +23,7 @@ use crate::ecs::components::{BoxedComponent, Component};
 use crate::ecs::entities::Entity;
 use crate::ecs::resources::{Resource, ResourceMap};
 
-/// Where a given entity currently lives: which archetype, and which row within it.
+/// Where a given entity currently lives, which archetype, and which row within it.
 #[derive(Clone, Copy)]
 pub(crate) struct EntityLocation {
     archetype_id: usize,
@@ -34,6 +37,7 @@ pub struct World {
 
     /// Where each entity currently lives (archetype + row). Indexed by `entity.index`.
     locations: HashMap<Entity, EntityLocation>,
+    next_index: Arc<AtomicU32>,
 
     /// All archetypes that currently exist.
     archetypes: Vec<Archetype>,
@@ -60,6 +64,7 @@ impl World {
             entity_slots: Vec::new(),
             free_indices: Vec::new(),
             locations: HashMap::new(),
+            next_index: Arc::new(AtomicU32::new(0)),
             archetypes: Vec::new(),
             archetype_index: HashMap::new(),
             resource_map: ResourceMap::default(),
@@ -71,21 +76,13 @@ impl World {
         world
     }
 
-    // --- Systems ---
-
-    pub fn update() {}
-    pub fn late_update() {}
-    pub fn fixed_update() {}
-    pub fn prerender() {}
-    pub fn start() {}
-
     // --- Hierarchy ---
 
     pub fn set_parent(&mut self, child: Entity, new_parent: Option<Entity>) {
-        if let Some(Parent(old_parent)) = self.get_component::<Parent>(child).cloned() {
-            if let Some(children) = self.get_component_mut::<Children>(old_parent) {
-                children.0.retain(|&e| e != child);
-            }
+        if let Some(Parent(old_parent)) = self.get_component::<Parent>(child).cloned()
+            && let Some(children) = self.get_component_mut::<Children>(old_parent)
+        {
+            children.0.retain(|&e| e != child);
         }
 
         match new_parent {
@@ -115,6 +112,7 @@ impl World {
                 row,
             },
         );
+
         entity
     }
 
@@ -130,6 +128,45 @@ impl World {
         self.free_indices.push(entity.index);
         true
     }
+
+    fn allocate_entity(&mut self) -> Entity {
+        if let Some(index) = self.free_indices.pop() {
+            let generation = self.entity_slots[index as usize].unwrap_or(0) + 1;
+            self.entity_slots[index as usize] = Some(generation);
+            Entity { index, generation }
+        } else {
+            let index = self
+                .next_index
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            if index as usize >= self.entity_slots.len() {
+                self.entity_slots.resize((index + 1) as usize, None);
+            }
+            self.entity_slots[index as usize] = Some(0);
+
+            Entity {
+                index,
+                generation: 0,
+            }
+        }
+    }
+    pub(crate) fn entity_counter(&self) -> Arc<AtomicU32> {
+        self.next_index.clone()
+    }
+    pub(crate) fn spawn_reserved(&mut self, entity: Entity) {
+        if entity.index as usize >= self.entity_slots.len() {
+            self.entity_slots.resize((entity.index + 1) as usize, None);
+        }
+        self.entity_slots[entity.index as usize] = Some(entity.generation);
+        let row = self.archetypes[0].allocate_row(entity);
+        self.locations.insert(
+            entity,
+            EntityLocation {
+                archetype_id: 0,
+                row,
+            },
+        );
+    }
+
     // --- Assets ---
 
     /// Returns the AssetMap of type `T` mutibly.
@@ -263,21 +300,6 @@ impl World {
         self.resource_map.get_mut::<T>()
     }
     // --- internal helpers ---
-
-    fn allocate_entity(&mut self) -> Entity {
-        if let Some(index) = self.free_indices.pop() {
-            let generation = self.entity_slots[index as usize].unwrap_or(0) + 1;
-            self.entity_slots[index as usize] = Some(generation);
-            Entity { index, generation }
-        } else {
-            let index = self.entity_slots.len() as u32;
-            self.entity_slots.push(Some(0));
-            Entity {
-                index,
-                generation: 0,
-            }
-        }
-    }
 
     /// Finds the archetype for a signature, creating it if it doesn't exist yet.
     fn get_or_create_archetype(&mut self, signature: ArchetypeSignature) -> usize {

@@ -151,6 +151,13 @@ fn system_attribute(item: TokenStream, kind: &str, takes_delta: bool) -> TokenSt
         };
         let ty = &*pat_type.ty;
         let is_f32 = matches!(ty, syn::Type::Path(p) if p.path.is_ident("f32"));
+        let is_commands_ref = matches!(
+            ty,
+            syn::Type::Reference(r) if matches!(
+                &*r.elem,
+                syn::Type::Path(p) if p.path.segments.last().map(|s| s.ident == "Commands").unwrap_or(false)
+            )
+        );
 
         if is_f32 && takes_delta {
             if seen_delta {
@@ -158,9 +165,11 @@ fn system_attribute(item: TokenStream, kind: &str, takes_delta: bool) -> TokenSt
             }
             seen_delta = true;
             fetch_exprs.push(quote! { delta });
+        } else if is_commands_ref {
+            fetch_exprs.push(quote! { &mut commands });
         } else {
             fetch_exprs.push(quote! {
-                <#ty as #engine_core::ecs::systems::param::SystemParam>::fetch(world)?
+                <#ty as #engine_core::ecs::systems::param::SystemParam>::fetch(world_ref)?
             });
         }
     }
@@ -180,8 +189,15 @@ fn system_attribute(item: TokenStream, kind: &str, takes_delta: bool) -> TokenSt
 
         #[doc(hidden)]
         #wrapper_sig {
-            let world: &#engine_core::ecs::World = world;
-            #fn_ident(#(#fetch_exprs),*)
+
+            let mut commands = {
+                let world_ref: &#engine_core::ecs::World = world;
+                let mut commands = #engine_core::ecs::commands::Commands::new(world.entity_counter());
+                #fn_ident(#(#fetch_exprs),*)?;
+                commands
+            };
+            commands.apply(world);
+            Ok(())
         }
 
         #engine_core::inventory::submit! {
@@ -189,7 +205,7 @@ fn system_attribute(item: TokenStream, kind: &str, takes_delta: bool) -> TokenSt
                 name: #fn_name_str,
                 func: #wrapper_ident,
                 priority: 0,
-            }
+        }
         }
     };
 

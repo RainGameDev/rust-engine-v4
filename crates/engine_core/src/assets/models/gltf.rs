@@ -5,7 +5,7 @@ use ash::vk::CommandPool;
 use nalgebra::Vector3;
 
 use crate::{
-    log, log_error,
+    log_error,
     rendering::{
         core::{model::GpuMesh, vertex::Vertex},
         vulkan::context::VulkanRenderingContext,
@@ -22,7 +22,7 @@ pub fn load_gltf_file(
     let path_str = path
         .to_str()
         .ok_or_else(|| anyhow::anyhow!("model path is not valid UTF-8: {:?}", path))?;
-    let (gltf, buffers, images) = gltf::import(path_str)?;
+    let (gltf, buffers, _images) = gltf::import(path_str)?;
 
     let mut meshes: Vec<GpuMesh> = Vec::new();
 
@@ -62,7 +62,7 @@ pub fn load_gltf_file(
                 .zip(normals.iter())
                 .zip(uv.iter())
                 .zip(tangents.iter())
-                .map(|(((pos, norm), uv), tan)| Vertex {
+                .map(|(((pos, norm), uv), _tan)| Vertex {
                     position: *pos,
                     normal: *norm,
                     uv: *uv,

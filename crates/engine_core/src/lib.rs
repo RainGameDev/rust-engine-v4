@@ -17,9 +17,10 @@ pub use macros::{fixed_update, late_update, update};
 use anyhow::Result;
 use nalgebra::Vector3;
 
+use crate::ecs::commands::Commands;
 use crate::ecs::query::filter::With;
 use crate::ecs::query::single::Single;
-use crate::ecs::systems::param::{Res, ResMut};
+use crate::ecs::systems::param::ResMut;
 use crate::{
     assets::AssetRegistration,
     ecs::{
@@ -96,19 +97,22 @@ fn debug_print_scene_info(
     transforms: Query<&Transform>,
     mut frame_counter: ResMut<FrameCounter>,
     camera: Single<(&Camera, &Transform), With<GameCamera>>,
+    commands: &mut Commands,
 ) -> Result<()> {
     println!("=== frame {} ===", frame_counter.count);
 
+    commands.spawn();
+
     for transform in transforms.iter() {
         println!(
-            "transform — pos: {:?}, rot: {:?}, scale: {:?}",
+            "transform - pos: {:?}, rot: {:?}, scale: {:?}",
             transform.position, transform.rotation, transform.scale
         );
     }
 
     let (cam, cam_global) = &*camera;
     println!(
-        "camera — active: {}, world pos: {:?}",
+        "camera - active: {}, world pos: {:?}",
         cam.is_active, cam_global.position
     );
 
