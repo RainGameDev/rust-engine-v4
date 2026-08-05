@@ -20,7 +20,7 @@ use nalgebra::Vector3;
 use crate::ecs::commands::Commands;
 use crate::ecs::query::filter::With;
 use crate::ecs::query::single::Single;
-use crate::ecs::systems::param::ResMut;
+use crate::ecs::systems::param::{Assets, ResMut};
 use crate::{
     assets::AssetRegistration,
     ecs::{
@@ -53,8 +53,6 @@ impl Engine {
         );
         ecs_world.insert_component(camera, Box::new(GameCamera));
 
-        ecs_world.add_resource(FrameCounter { count: 0 });
-
         for registration in inventory::iter::<AssetRegistration> {
             let type_id = (registration.type_id)();
             let asset_map = (registration.create_asset_map)();
@@ -85,38 +83,4 @@ impl Default for Engine {
 pub fn init_core() -> Result<()> {
     let engine = Engine::new();
     window::run(engine)
-}
-
-#[derive(Resource, Clone, Debug)]
-pub struct FrameCounter {
-    pub count: u64,
-}
-
-#[update]
-fn debug_print_scene_info(
-    transforms: Query<&Transform>,
-    mut frame_counter: ResMut<FrameCounter>,
-    camera: Single<(&Camera, &Transform), With<GameCamera>>,
-    commands: &mut Commands,
-) -> Result<()> {
-    println!("=== frame {} ===", frame_counter.count);
-
-    commands.spawn();
-
-    for transform in transforms.iter() {
-        println!(
-            "transform - pos: {:?}, rot: {:?}, scale: {:?}",
-            transform.position, transform.rotation, transform.scale
-        );
-    }
-
-    let (cam, cam_global) = &*camera;
-    println!(
-        "camera - active: {}, world pos: {:?}",
-        cam.is_active, cam_global.position
-    );
-
-    frame_counter.count += 1;
-
-    Ok(())
 }
