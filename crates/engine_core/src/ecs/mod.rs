@@ -169,6 +169,11 @@ impl World {
 
     // --- Assets ---
 
+    /// Returns the full AssetMap for type `T`.
+    pub fn assets_of<T: Asset>(&self) -> Option<&AssetMap<T>> {
+        self.asset_map::<T>()
+    }
+
     /// Returns the AssetMap of type `T` mutibly.
     fn asset_map_mut<T: Asset>(&mut self) -> &mut AssetMap<T> {
         self.assets
@@ -186,8 +191,8 @@ impl World {
     }
 
     /// Adds asset `T` to it's map.
-    pub fn add_asset<T: Asset>(&mut self, value: T) -> Handle<T> {
-        self.asset_map_mut::<T>().add(value)
+    pub fn add_asset<T: Asset>(&mut self, value: T, path: String) -> Handle<T> {
+        self.asset_map_mut::<T>().add(value, path)
     }
 
     /// Gets the asset of `handle` immutibly.
@@ -203,6 +208,16 @@ impl World {
     /// Removes the asset of `handle` from it's respective map.
     pub fn remove_asset<T: Asset>(&mut self, handle: Handle<T>) -> Option<T> {
         self.asset_map_mut::<T>().remove(handle)
+    }
+
+    /// Gets an asset of type `T` from it's path.
+    pub fn get_asset_by_path<T: Asset>(&self, path: &str) -> Option<&T> {
+        self.asset_map::<T>()?.get_by_path(path)
+    }
+
+    /// Gets an asset handle of type `T` from it's path.
+    pub fn get_asset_handle<T: Asset>(&self, path: &str) -> Option<Handle<T>> {
+        self.asset_map::<T>()?.get_handle(path)
     }
 
     // --- Components ---

@@ -5,22 +5,26 @@ pub mod input;
 pub mod logging;
 pub mod rendering;
 pub mod time;
+pub mod utils;
 pub mod window;
 
 #[cfg(test)]
 mod tests;
 
+use std::path::Path;
+
 pub use inventory;
 pub use macros::{Component, Resource};
-pub use macros::{fixed_update, late_update, update};
+pub use macros::{fixed_update, late_update, start, update};
 
 use anyhow::Result;
 use nalgebra::Vector3;
 
-use crate::ecs::commands::Commands;
-use crate::ecs::query::filter::With;
-use crate::ecs::query::single::Single;
-use crate::ecs::systems::param::{Assets, ResMut};
+use crate::ecs::components::engine_components::model_renderer::ModelRenderer;
+use crate::ecs::systems::param::ResMut;
+use crate::rendering::core::model::GpuMesh;
+use crate::rendering::egui::context::EguiContext;
+use crate::utils::directory_check::load_directory;
 use crate::{
     assets::AssetRegistration,
     ecs::{
@@ -58,7 +62,6 @@ impl Engine {
             let asset_map = (registration.create_asset_map)();
             ecs_world.assets.insert(type_id, asset_map);
         }
-
         Self { ecs_world }
     }
 
@@ -83,4 +86,17 @@ impl Default for Engine {
 pub fn init_core() -> Result<()> {
     let engine = Engine::new();
     window::run(engine)
+}
+
+#[update]
+pub fn test(context: ResMut<EguiContext>) -> Result<()> {
+    egui::Window::new("").show(&context.0, |ui| {
+        egui::CentralPanel::default().show(ui, |ui| {
+            ui.heading("My egui Application");
+            ui.horizontal(|ui| {
+                let name_label = ui.label("Your name: ");
+            });
+        });
+    });
+    Ok(())
 }

@@ -1,5 +1,6 @@
 use anyhow::Result;
 use ash::vk::{Buffer, DeviceMemory};
+use macros::Asset;
 
 use crate::rendering::{
     core::vertex::Vertex,
@@ -19,7 +20,7 @@ pub struct GpuModel {
     pub name: String,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Asset, Debug, Clone, Default)]
 pub struct GpuMesh {
     pub vertex_buffer: Buffer,
     pub vertex_buffer_memory: DeviceMemory,

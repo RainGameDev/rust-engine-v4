@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use anyhow::Result;
-use macros::fixed_update;
+use nalgebra::Vector3;
 use winit::{
     application::ApplicationHandler,
     event::WindowEvent,
@@ -12,10 +12,13 @@ use winit::{
 use crate::{
     Engine,
     ecs::{
-        components::engine_components::transform::transform_update,
+        components::engine_components::{model_renderer::ModelRenderer, transform::Transform},
+        query::query::Query,
         systems::{StartSystem, run_system, scheduler::Schedule},
     },
-    log_error,
+    log_error, log_warn,
+    rendering::{core::model::GpuMesh, egui::context::EguiContext},
+    utils::directory_check::load_directory,
 };
 use crate::{
     assets::models::gltf::load_gltf_file,
@@ -49,6 +52,45 @@ impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         self.rendering_info = Some(RenderingInfo::new(event_loop));
         self.renderer = Some(VulkanRenderer::new(self.rendering_info.clone().unwrap()).unwrap());
+        let context = &self.rendering_info.as_ref().unwrap().context;
+        let command_pool = self.renderer.as_ref().unwrap().command_pool;
+
+        let model_paths = load_directory(
+            Path::new(&format!("{}/{}", env!("CARGO_MANIFEST_DIR"), "res/")),
+            "glb",
+        )
+        .unwrap();
+
+        for model_path in model_paths {
+            match load_gltf_file(Path::new(&model_path), context, command_pool) {
+                Ok(mesh) => {
+                    for mesh in mesh {
+                        let handle = self.engine.ecs_world.add_asset(mesh, model_path.clone());
+                        crate::log_info!("loaded mesh: {} -> {:?}", model_path, handle);
+                    }
+                }
+                Err(err) => {
+                    crate::log_error!(reason: "failed to load gltf", "{}: {err:?}", model_path);
+                }
+            }
+        }
+
+        let context = EguiContext(self.renderer.as_ref().unwrap().get_egui_context());
+        self.engine.ecs_world.add_resource(context);
+
+        let model = self.engine.ecs_world.spawn();
+        self.engine
+            .ecs_world
+            .add_component(model, Transform::from_position(Vector3::new(0.0, 0.0, 0.0)));
+
+        let model_asset = self
+            .engine
+            .ecs_world
+            .get_asset_handle::<GpuMesh>("meshes/test.glb")
+            .unwrap();
+        self.engine
+            .ecs_world
+            .add_component(model, ModelRenderer { model: model_asset });
     }
 
     fn suspended(&mut self, _event_loop: &ActiveEventLoop) {}
@@ -61,6 +103,10 @@ impl ApplicationHandler for App {
     ) {
         if self.rendering_info.is_none() {
             return;
+        }
+
+        if let Some(renderer) = &mut self.renderer {
+            let _ = renderer.handle_ui_event(&event.clone());
         }
 
         match event {
@@ -76,32 +122,30 @@ impl ApplicationHandler for App {
                 }
             }
             WindowEvent::RedrawRequested => {
-                self.schedule.tick(&mut self.engine.ecs_world).unwrap();
                 if let Some(renderer) = &mut self.renderer {
-                    transform_update(&mut self.engine.ecs_world);
-
-                    let context = &self.rendering_info.as_ref().unwrap().context;
-                    let gpu_mesh = load_gltf_file(
-                        &Path::new(&format!(
-                            "{}/{}meshes/test.glb",
-                            env!("CARGO_MANIFEST_DIR"),
-                            "res/"
-                        )),
-                        context,
-                        renderer.command_pool,
-                    )
-                    .unwrap();
+                    renderer.begin_ui();
+                    self.schedule.tick(&mut self.engine.ecs_world).unwrap();
 
                     let Some(mut frame_info) = self.engine.return_renderable() else {
                         log_error!("No active camera, not rendering");
                         return;
                     };
 
-                    for mesh in gpu_mesh {
-                        frame_info.meshes.push(mesh);
+                    let query: Query<(&ModelRenderer, &Transform)> =
+                        Query::new(&self.engine.ecs_world);
+
+                    for (model_renderer, _) in query.iter() {
+                        let Some(mesh) = self.engine.ecs_world.get_asset(model_renderer.model)
+                        else {
+                            log_warn!(reason: "stale or missing mesh handle", "skipping entity");
+                            continue;
+                        };
+
+                        frame_info.meshes.push(mesh.clone());
                     }
 
                     renderer.render(frame_info).unwrap();
+                    renderer.end_ui().unwrap();
                 }
             }
             _ => {}

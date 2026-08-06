@@ -11,13 +11,20 @@ members = [
 edition = "2024"
 
 [workspace.dependencies]
-libloading = "0.8"
-hot-lib-reloader = "0.7"
 ash = "0.38.0"
 ash-window = "0.13.0"
 anyhow = "1.0.100"
-nalgebra = "0.35.0"
-winit = "0.30.5"
-inventory = "0.3.24"
-rand = "0.10.2"
+egui         = { git = "https://github.com/emilk/egui", branch = "main" }
+egui_extras  = { git = "https://github.com/emilk/egui", branch = "main" }
+egui-winit   = { git = "https://github.com/emilk/egui", branch = "main" }
+epaint       = { git = "https://github.com/emilk/egui", branch = "main" }
+egui-ash-renderer = {git = "https://github.com/RainGameDev/egui-ash-renderer", rev = "ec16f29aeec99ea17c90ce933d7e9a74fc3e7027", features = ["dynamic-rendering"]}
 gltf = "1.4.1"
+hot-lib-reloader = "0.7"
+inventory = "0.3.24"
+libloading = "0.8"
+nalgebra = "0.35.0"
+rand = "0.10.2"
+walkdir = "2.5.0"
+winit = "0.30.5"
+

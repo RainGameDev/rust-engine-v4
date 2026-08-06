@@ -7,12 +7,17 @@ edition.workspace = true
 crate-type = ["dylib", "rlib"]
 
 [dependencies]
-macros = { path = "../macros" }
-winit.workspace = true
 ash.workspace = true
 ash-window.workspace = true
 anyhow.workspace  = true
+egui.workspace = true
+egui_extras.workspace = true
+egui-winit.workspace = true
+egui-ash-renderer.workspace = true
+gltf.workspace = true
 nalgebra.workspace  = true
+macros = { path = "../macros" }
 rand.workspace = true
 inventory = "0.3.24"
-gltf.workspace = true
+walkdir.workspace = true
+winit.workspace = true

@@ -134,6 +134,10 @@ pub fn fixed_update(_attr: TokenStream, item: TokenStream) -> TokenStream {
     system_attribute(item, "FixedUpdateSystem", true)
 }
 
+#[proc_macro_attribute]
+pub fn start(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    system_attribute(item, "StartSystem", true)
+}
 fn system_attribute(item: TokenStream, kind: &str, takes_delta: bool) -> TokenStream {
     let input = parse_macro_input!(item as syn::ItemFn);
     let fn_ident = &input.sig.ident;

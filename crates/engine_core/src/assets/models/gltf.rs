@@ -2,9 +2,11 @@ use std::path::Path;
 
 use anyhow::Result;
 use ash::vk::CommandPool;
-use nalgebra::Vector3;
+use gltf::{Gltf, animation::util::ReadOutputs};
+use nalgebra::{UnitQuaternion, Vector3};
 
 use crate::{
+    assets::models::animation::{AnimationClip, Interpolation, Track, TrackData},
     log_error,
     rendering::{
         core::{model::GpuMesh, vertex::Vertex},
@@ -131,6 +133,66 @@ fn compute_normals(positions: &[[f32; 3]], indices: &[u32]) -> Vec<[f32; 3]> {
                 [n.x, n.y, n.z]
             } else {
                 [0.0, 1.0, 0.0]
+            }
+        })
+        .collect()
+}
+
+/// Loads GLTF file animations into animation clips.
+pub fn load_animations(gltf: &Gltf, buffers: &[gltf::buffer::Data]) -> Vec<AnimationClip> {
+    gltf.animations()
+        .map(|anim| {
+            let mut tracks = Vec::new();
+            let mut duration = 0.0f32;
+
+            // for the animations in the file
+            for channel in anim.channels() {
+                // read the animation buffer & length
+                let reader = channel.reader(|buffer| Some(&buffers[buffer.index()]));
+                let times: Vec<f32> = reader.read_inputs().unwrap().collect();
+                duration = duration.max(times.last().copied().unwrap_or(0.0));
+
+                let target_joint = channel.target().node().index(); // remap to Skeleton joint index later
+
+                // convet the gltf interp to mine.
+                let interpolation = match channel.sampler().interpolation() {
+                    gltf::animation::Interpolation::Linear => Interpolation::Linear,
+                    gltf::animation::Interpolation::Step => Interpolation::Step,
+                    gltf::animation::Interpolation::CubicSpline => Interpolation::CubicSpline,
+                };
+
+                // read the data
+                let data = match reader.read_outputs().unwrap() {
+                    ReadOutputs::Translations(t) => {
+                        TrackData::Translation(t.map(Vector3::from).collect())
+                    }
+                    ReadOutputs::Rotations(r) => TrackData::Rotation(
+                        r.into_f32()
+                            .map(|[x, y, z, w]| {
+                                UnitQuaternion::from_quaternion(nalgebra::Quaternion::new(
+                                    w, x, y, z,
+                                ))
+                            })
+                            .collect(),
+                    ),
+                    ReadOutputs::Scales(s) => TrackData::Scale(s.map(Vector3::from).collect()),
+                    ReadOutputs::MorphTargetWeights(_) => continue, // skip for now
+                };
+
+                // push to the track
+                tracks.push(Track {
+                    target_joint,
+                    times,
+                    data,
+                    interpolation,
+                });
+            }
+
+            // create a new clip
+            AnimationClip {
+                name: anim.name().unwrap_or("unnamed").to_string(),
+                duration,
+                tracks,
             }
         })
         .collect()
