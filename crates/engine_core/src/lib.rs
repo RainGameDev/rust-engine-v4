@@ -72,7 +72,7 @@ impl Engine {
 
         Some(FrameInfo {
             view_projection,
-            meshes: Vec::new(),
+            draws: Vec::new(),
         })
     }
 }

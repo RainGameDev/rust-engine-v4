@@ -1,12 +1,12 @@
-use std::path::Path;
+use std::{collections::HashMap, path::Path};
 
 use anyhow::Result;
 use ash::vk::CommandPool;
-use gltf::{Gltf, animation::util::ReadOutputs};
-use nalgebra::{UnitQuaternion, Vector3};
+use gltf::{Document, animation::util::ReadOutputs};
+use nalgebra::{Matrix4, UnitQuaternion, Vector3};
 
 use crate::{
-    assets::models::animation::{AnimationClip, Interpolation, Track, TrackData},
+    assets::models::animation::{AnimationClip, Interpolation, Skeleton, Track, TrackData},
     log_error,
     rendering::{
         core::{model::GpuMesh, vertex::Vertex},
@@ -14,17 +14,28 @@ use crate::{
     },
 };
 
-/// Loads a gltf file from `path` and loads it into several `GpuMesh`s for rendering.
+/// Everything loaded from a single gltf file.
+pub struct LoadedGltf {
+    pub meshes: Vec<GpuMesh>,
+    pub skeletons: Vec<Skeleton>,
+    pub animations: Vec<AnimationClip>,
+}
+
+/// Loads a gltf file from `path` and loads it into several `GpuMesh`s for rendering,
+/// plus any `Skeleton`s and `AnimationClip`s it contains.
 /// Takes in a `context` and `command_pool` to create the buffers needed for the mesh.
 pub fn load_gltf_file(
     path: &Path,
     context: &VulkanRenderingContext,
     command_pool: CommandPool,
-) -> Result<Vec<GpuMesh>> {
+) -> Result<LoadedGltf> {
     let path_str = path
         .to_str()
         .ok_or_else(|| anyhow::anyhow!("model path is not valid UTF-8: {:?}", path))?;
     let (gltf, buffers, _images) = gltf::import(path_str)?;
+
+    let skeletons = load_skeletons(&gltf, &buffers);
+    let animations = load_animations(&gltf, &buffers, &skeletons);
 
     let mut meshes: Vec<GpuMesh> = Vec::new();
 
@@ -59,15 +70,28 @@ pub fn load_gltf_file(
                 None => compute_tangents(&positions, &normals, &uv, &indices),
             };
 
+            let joints: Vec<[u16; 4]> = match reader.read_joints(0) {
+                Some(j) => j.into_u16().collect(),
+                None => vec![[0, 0, 0, 0]; positions.len()],
+            };
+
+            let weights: Vec<[f32; 4]> = match reader.read_weights(0) {
+                Some(w) => w.into_f32().collect(),
+                None => vec![[1.0, 0.0, 0.0, 0.0]; positions.len()],
+            };
             let vertices: Vec<Vertex> = positions
                 .iter()
                 .zip(normals.iter())
                 .zip(uv.iter())
                 .zip(tangents.iter())
-                .map(|(((pos, norm), uv), _tan)| Vertex {
+                .zip(joints.iter())
+                .zip(weights.iter())
+                .map(|(((((pos, norm), uv), _tan), joints), weights)| Vertex {
                     position: *pos,
                     normal: *norm,
                     uv: *uv,
+                    joints: *joints,
+                    weights: *weights,
                     // color: [1.0, 1.0, 1.0],
                     // tangent: *tan,
                 })
@@ -105,41 +129,100 @@ pub fn load_gltf_file(
         }
     }
 
-    Ok(meshes)
+    Ok(LoadedGltf {
+        meshes,
+        skeletons,
+        animations,
+    })
 }
 
-/// Computes per-vertex normals by accumulating face normals over the index list.
-/// Used as a fallback when a glTF primitive ships without a NORMAL attribute.
-fn compute_normals(positions: &[[f32; 3]], indices: &[u32]) -> Vec<[f32; 3]> {
-    let mut normals = vec![Vector3::new(0.0f32, 0.0, 0.0); positions.len()];
-    for tri in indices.chunks_exact(3) {
-        let (a, b, c) = (tri[0] as usize, tri[1] as usize, tri[2] as usize);
-        if a >= positions.len() || b >= positions.len() || c >= positions.len() {
-            continue;
+/// Builds a `Skeleton` for every skin in the gltf file.
+pub fn load_skeletons(gltf: &Document, buffers: &[gltf::buffer::Data]) -> Vec<Skeleton> {
+    let mut parents: HashMap<usize, usize> = HashMap::new();
+    for node in gltf.nodes() {
+        for child in node.children() {
+            parents.insert(child.index(), node.index());
         }
-        let pa = Vector3::from(positions[a]);
-        let pb = Vector3::from(positions[b]);
-        let pc = Vector3::from(positions[c]);
-        let face = (pb - pa).cross(&(pc - pa));
-        normals[a] += face;
-        normals[b] += face;
-        normals[c] += face;
     }
-    normals
-        .into_iter()
-        .map(|n| {
-            if n.norm_squared() > 1e-12 {
-                let n = n.normalize();
-                [n.x, n.y, n.z]
-            } else {
-                [0.0, 1.0, 0.0]
+
+    gltf.skins()
+        .map(|skin| {
+            let joint_nodes: Vec<usize> = skin.joints().map(|n| n.index()).collect();
+            let joint_slot: HashMap<usize, usize> = joint_nodes
+                .iter()
+                .enumerate()
+                .map(|(i, &n)| (n, i))
+                .collect();
+
+            let inverse_bind_matrices: Vec<Matrix4<f32>> = match skin
+                .reader(|buffer| Some(&buffers[buffer.index()]))
+                .read_inverse_bind_matrices()
+            {
+                Some(iter) => iter
+                    .map(|m| Matrix4::from_column_slice(m.as_flattened()))
+                    .collect(),
+                // missing inverse bind matrices default to identity
+                None => vec![Matrix4::identity(); joint_nodes.len()],
+            };
+
+            let joint_names: Vec<String> = joint_nodes
+                .iter()
+                .map(|&n| {
+                    gltf.nodes()
+                        .nth(n)
+                        .and_then(|node| node.name())
+                        .unwrap_or("joint")
+                        .to_string()
+                })
+                .collect();
+
+            let joint_parents: Vec<Option<usize>> = joint_nodes
+                .iter()
+                .map(|&node_index| {
+                    let mut current = node_index;
+                    loop {
+                        match parents.get(&current) {
+                            Some(&parent) => {
+                                if let Some(&slot) = joint_slot.get(&parent) {
+                                    return Some(slot);
+                                }
+                                current = parent;
+                            }
+                            // reached the root without finding a joint parent
+                            None => return None,
+                        }
+                    }
+                })
+                .collect();
+
+            Skeleton {
+                joint_parents,
+                inverse_bind_matrices,
+                joint_names,
+                joint_nodes,
             }
         })
         .collect()
 }
 
 /// Loads GLTF file animations into animation clips.
-pub fn load_animations(gltf: &Gltf, buffers: &[gltf::buffer::Data]) -> Vec<AnimationClip> {
+pub fn load_animations(
+    gltf: &Document,
+    buffers: &[gltf::buffer::Data],
+    skeletons: &[Skeleton],
+) -> Vec<AnimationClip> {
+    let node_to_joint: HashMap<usize, usize> = skeletons
+        .first()
+        .map(|skeleton| {
+            skeleton
+                .joint_nodes
+                .iter()
+                .enumerate()
+                .map(|(slot, &node)| (node, slot))
+                .collect()
+        })
+        .unwrap_or_default();
+
     gltf.animations()
         .map(|anim| {
             let mut tracks = Vec::new();
@@ -152,7 +235,13 @@ pub fn load_animations(gltf: &Gltf, buffers: &[gltf::buffer::Data]) -> Vec<Anima
                 let times: Vec<f32> = reader.read_inputs().unwrap().collect();
                 duration = duration.max(times.last().copied().unwrap_or(0.0));
 
-                let target_joint = channel.target().node().index(); // remap to Skeleton joint index later
+                // remap the gltf node index to a Skeleton joint index
+                let Some(target_joint) =
+                    node_to_joint.get(&channel.target().node().index()).copied()
+                else {
+                    // the track animates a node that isn't a skin joint, skip it
+                    continue;
+                };
 
                 // convet the gltf interp to mine.
                 let interpolation = match channel.sampler().interpolation() {
@@ -256,6 +345,36 @@ fn compute_tangents(
                 1.0
             };
             [t.x, t.y, t.z, handedness]
+        })
+        .collect()
+}
+
+/// Computes per-vertex normals by accumulating face normals over the index list.
+/// Used as a fallback when a glTF primitive ships without a NORMAL attribute.
+fn compute_normals(positions: &[[f32; 3]], indices: &[u32]) -> Vec<[f32; 3]> {
+    let mut normals = vec![Vector3::new(0.0f32, 0.0, 0.0); positions.len()];
+    for tri in indices.chunks_exact(3) {
+        let (a, b, c) = (tri[0] as usize, tri[1] as usize, tri[2] as usize);
+        if a >= positions.len() || b >= positions.len() || c >= positions.len() {
+            continue;
+        }
+        let pa = Vector3::from(positions[a]);
+        let pb = Vector3::from(positions[b]);
+        let pc = Vector3::from(positions[c]);
+        let face = (pb - pa).cross(&(pc - pa));
+        normals[a] += face;
+        normals[b] += face;
+        normals[c] += face;
+    }
+    normals
+        .into_iter()
+        .map(|n| {
+            if n.norm_squared() > 1e-12 {
+                let n = n.normalize();
+                [n.x, n.y, n.z]
+            } else {
+                [0.0, 1.0, 0.0]
+            }
         })
         .collect()
 }

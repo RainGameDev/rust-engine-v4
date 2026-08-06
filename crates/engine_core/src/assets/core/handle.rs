@@ -48,3 +48,14 @@ impl<T: Asset> Debug for Handle<T> {
         )
     }
 }
+
+impl<T: Asset> Handle<T> {
+    /// A handle that is guaranteed not to reference any live asset.
+    pub fn dangling() -> Self {
+        Self {
+            index: u32::MAX,
+            generation: u32::MAX,
+            _marker: PhantomData,
+        }
+    }
+}

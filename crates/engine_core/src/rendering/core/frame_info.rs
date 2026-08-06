@@ -13,7 +13,16 @@ use crate::{
 #[derive(Clone, Debug)]
 pub struct FrameInfo {
     pub view_projection: Matrix4<f32>,
-    pub meshes: Vec<GpuMesh>,
+    pub draws: Vec<DrawInfo>,
+}
+
+/// One mesh to draw this frame, plus optional skinning data.
+#[derive(Clone, Debug)]
+pub struct DrawInfo {
+    pub mesh: GpuMesh,
+    /// Per-entity joint matrices (in the `Skeleton`'s joint order). `None`
+    /// for static meshes, which bind an identity joint buffer.
+    pub joint_matrices: Option<Vec<Matrix4<f32>>>,
 }
 
 #[repr(C)]

@@ -59,9 +59,17 @@ pub struct VulkanRenderer {
     pub pipeline: Pipeline,
     pub pipeline_layout: PipelineLayout,
     pub ui_renderer: UIRenderer,
+    joint_buffer: vk::Buffer,
+    joint_buffer_memory: vk::DeviceMemory,
+    joint_descriptor_set_layout: vk::DescriptorSetLayout,
+    joint_descriptor_pool: vk::DescriptorPool,
+    joint_descriptor_set: vk::DescriptorSet,
     context: Arc<VulkanRenderingContext>,
     current_image_index: u32,
 }
+
+/// Maximum number of joints supported per skinned draw.
+const MAX_JOINTS: usize = 256;
 
 // TODO: replace with asset loader
 const SHADER_DIR: &str = "res/shaders/";
@@ -89,10 +97,61 @@ impl VulkanRenderer {
 
         unsafe {
             let context = rendering_info.context.clone();
-            let pipeline_layout = rendering_info
-                .context
-                .device
-                .create_pipeline_layout(&PipelineLayoutCreateInfo::default(), None)?;
+
+            // Skinning: a storage buffer holding the per-entity joint matrices.
+            let joint_binding = vk::DescriptorSetLayoutBinding::default()
+                .binding(0)
+                .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+                .descriptor_count(1)
+                .stage_flags(vk::ShaderStageFlags::VERTEX);
+            let joint_descriptor_set_layout = context.create_descriptor_set_layout(&[
+                joint_binding,
+            ])?;
+
+            let joint_descriptor_pool = context.create_descriptor_pool(
+                &[vk::DescriptorPoolSize::default()
+                    .ty(vk::DescriptorType::STORAGE_BUFFER)
+                    .descriptor_count(1)],
+                1,
+            )?;
+
+            let joint_descriptor_set = context.allocate_descriptor_set(
+                joint_descriptor_pool,
+                joint_descriptor_set_layout,
+            )?;
+
+            let joint_buffer_size =
+                (MAX_JOINTS * std::mem::size_of::<nalgebra::Matrix4<f32>>()) as vk::DeviceSize;
+            let (joint_buffer, joint_buffer_memory) = context.create_buffer(
+                joint_buffer_size,
+                vk::BufferUsageFlags::STORAGE_BUFFER,
+                vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
+            )?;
+
+            context.device.update_descriptor_sets(
+                &[vk::WriteDescriptorSet::default()
+                    .dst_set(joint_descriptor_set)
+                    .dst_binding(0)
+                    .dst_array_element(0)
+                    .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+                    .buffer_info(&[vk::DescriptorBufferInfo::default()
+                        .buffer(joint_buffer)
+                        .offset(0)
+                        .range(joint_buffer_size)])],
+                &[],
+            );
+
+            let push_constant_range = vk::PushConstantRange::default()
+                .stage_flags(vk::ShaderStageFlags::VERTEX)
+                .offset(0)
+                .size(std::mem::size_of::<PushConstants>() as u32);
+
+            let pipeline_layout = context.device.create_pipeline_layout(
+                &PipelineLayoutCreateInfo::default()
+                    .set_layouts(&[joint_descriptor_set_layout])
+                    .push_constant_ranges(&[push_constant_range]),
+                None,
+            )?;
 
             let pipeline = context.create_graphics_pipeline(
                 vertex_shader,
@@ -151,6 +210,11 @@ impl VulkanRenderer {
                 image_layouts: ImageLayouts::default(),
                 pipeline,
                 pipeline_layout,
+                joint_buffer,
+                joint_buffer_memory,
+                joint_descriptor_set_layout,
+                joint_descriptor_pool,
+                joint_descriptor_set,
                 context: Arc::new(rendering_info.context.clone()),
                 swapchain,
                 ui_renderer,
@@ -229,7 +293,40 @@ impl VulkanRenderer {
                 self.pipeline,
             );
 
-            for mesh in frame_info.meshes {
+            for draw in frame_info.draws {
+                let mesh = &draw.mesh;
+
+                // Upload this entity's joint matrices to the storage buffer.
+                let joints = draw.joint_matrices.as_ref();
+                let (joint_count, write_identity) = match joints {
+                    Some(j) if !j.is_empty() => (j.len().min(MAX_JOINTS), false),
+                    _ => (1, true),
+                };
+                let bytes =
+                    (joint_count * std::mem::size_of::<nalgebra::Matrix4<f32>>()) as vk::DeviceSize;
+
+                let joint_ptr = self.context.device.map_memory(
+                    self.joint_buffer_memory,
+                    0,
+                    bytes,
+                    vk::MemoryMapFlags::empty(),
+                )? as *mut nalgebra::Matrix4<f32>;
+                if write_identity {
+                    joint_ptr.write(nalgebra::Matrix4::identity());
+                } else {
+                    joint_ptr.copy_from_nonoverlapping(joints.unwrap().as_ptr(), joint_count);
+                }
+                self.context.device.unmap_memory(self.joint_buffer_memory);
+
+                self.context.device.cmd_bind_descriptor_sets(
+                    frame.command_buffer,
+                    vk::PipelineBindPoint::GRAPHICS,
+                    self.pipeline_layout,
+                    0,
+                    &[self.joint_descriptor_set],
+                    &[],
+                );
+
                 let mvp = frame_info.view_projection;
                 let push_constants = PushConstants {
                     mvp: matrix_to_push_constant(&mvp),

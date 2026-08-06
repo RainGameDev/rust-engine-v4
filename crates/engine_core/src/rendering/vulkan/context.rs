@@ -325,6 +325,57 @@ impl VulkanRenderingContext {
         Ok(shader_module)
     }
 
+    /// Creates a descriptor set layout from the given bindings.
+    pub fn create_descriptor_set_layout(
+        &self,
+        bindings: &[vk::DescriptorSetLayoutBinding],
+    ) -> Result<vk::DescriptorSetLayout> {
+        let layout = unsafe {
+            self.device.create_descriptor_set_layout(
+                &vk::DescriptorSetLayoutCreateInfo::default().bindings(bindings),
+                None,
+            )?
+        };
+        Ok(layout)
+    }
+
+    /// Creates a descriptor pool with the given sizes, able to allocate `max_sets` sets.
+    pub fn create_descriptor_pool(
+        &self,
+        pool_sizes: &[vk::DescriptorPoolSize],
+        max_sets: u32,
+    ) -> Result<vk::DescriptorPool> {
+        let pool = unsafe {
+            self.device.create_descriptor_pool(
+                &vk::DescriptorPoolCreateInfo::default()
+                    .pool_sizes(pool_sizes)
+                    .max_sets(max_sets),
+                None,
+            )?
+        };
+        Ok(pool)
+    }
+
+    /// Allocates a single descriptor set from `pool` using `layout`.
+    pub fn allocate_descriptor_set(
+        &self,
+        pool: vk::DescriptorPool,
+        layout: vk::DescriptorSetLayout,
+    ) -> Result<vk::DescriptorSet> {
+        let set = unsafe {
+            self.device
+                .allocate_descriptor_sets(
+                    &vk::DescriptorSetAllocateInfo::default()
+                        .descriptor_pool(pool)
+                        .set_layouts(&[layout]),
+                )?
+                .into_iter()
+                .next()
+                .unwrap()
+        };
+        Ok(set)
+    }
+
     pub fn create_image_view(
         &self,
         image: vk::Image,
@@ -550,8 +601,7 @@ impl VulkanRenderingContext {
         Ok((buffer, memory))
     }
 
-    pub fn create_vertex_buffer<T: VertexDefinition>(
-        &self,
+    pub fn create_vertex_buffer<T: VertexDefinition>(        &self,
         vertices: &[T],
         command_pool: vk::CommandPool,
     ) -> Result<(vk::Buffer, vk::DeviceMemory)> {

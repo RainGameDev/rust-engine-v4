@@ -48,6 +48,7 @@ pub struct Skeleton {
     pub joint_parents: Vec<Option<usize>>,
     pub inverse_bind_matrices: Vec<Matrix4<f32>>,
     pub joint_names: Vec<String>,
+    pub joint_nodes: Vec<usize>,
 }
 
 #[derive(Component, Debug, Clone)]
@@ -62,6 +63,17 @@ pub struct AnimationPlayer {
     pub time: f32,
     pub speed: f32,
     pub looping: bool,
+}
+
+impl Default for AnimationPlayer {
+    fn default() -> Self {
+        Self {
+            clip: Handle::dangling(),
+            time: 0.0,
+            speed: 1.0,
+            looping: true,
+        }
+    }
 }
 
 #[fixed_update]

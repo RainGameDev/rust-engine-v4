@@ -17,11 +17,14 @@ use crate::{
         systems::{StartSystem, run_system, scheduler::Schedule},
     },
     log_error, log_warn,
-    rendering::{core::model::GpuMesh, egui::context::EguiContext},
+    rendering::{
+        core::{frame_info::DrawInfo, model::GpuMesh},
+        egui::context::EguiContext,
+    },
     utils::directory_check::load_directory,
 };
 use crate::{
-    assets::models::gltf::load_gltf_file,
+    assets::models::{animation::{AnimationClip, AnimationPlayer, Skeleton, SkinnedMesh}, gltf::load_gltf_file},
     rendering::{
         core::frame_info::update_camera_aspect_ratio,
         vulkan::{RenderingInfo, VulkanRenderer},
@@ -63,10 +66,18 @@ impl ApplicationHandler for App {
 
         for model_path in model_paths {
             match load_gltf_file(Path::new(&model_path), context, command_pool) {
-                Ok(mesh) => {
-                    for mesh in mesh {
+                Ok(loaded) => {
+                    for mesh in loaded.meshes {
                         let handle = self.engine.ecs_world.add_asset(mesh, model_path.clone());
                         crate::log_info!("loaded mesh: {} -> {:?}", model_path, handle);
+                    }
+                    for skeleton in loaded.skeletons {
+                        let handle = self.engine.ecs_world.add_asset(skeleton, model_path.clone());
+                        crate::log_info!("loaded skeleton: {} -> {:?}", model_path, handle);
+                    }
+                    for clip in loaded.animations {
+                        let handle = self.engine.ecs_world.add_asset(clip, model_path.clone());
+                        crate::log_info!("loaded animation: {} -> {:?}", model_path, handle);
                     }
                 }
                 Err(err) => {
@@ -91,6 +102,42 @@ impl ApplicationHandler for App {
         self.engine
             .ecs_world
             .add_component(model, ModelRenderer { model: model_asset });
+
+        if let (Some(skeleton_asset), Some(clip_asset)) = (
+            self.engine
+                .ecs_world
+                .get_asset_handle::<Skeleton>("meshes/test.glb"),
+            self.engine
+                .ecs_world
+                .get_asset_handle::<AnimationClip>("meshes/test.glb"),
+        ) {
+            let joint_count = self
+                .engine
+                .ecs_world
+                .get_asset(skeleton_asset)
+                .map(|skeleton| skeleton.joint_parents.len())
+                .unwrap_or(0);
+
+            self.engine.ecs_world.add_component(
+                model,
+                SkinnedMesh {
+                    skeleton: skeleton_asset,
+                    joint_matrices: vec![nalgebra::Matrix4::identity(); joint_count],
+                },
+            );
+
+            self.engine.ecs_world.add_component(
+                model,
+                AnimationPlayer {
+                    clip: clip_asset,
+                    ..AnimationPlayer::default()
+                },
+            );
+
+            crate::log_info!("added skinned mesh + animation player to test model");
+        } else {
+            crate::log_warn!(reason: "no skeleton or animation in test.glb", "model spawned without animation");
+        }
     }
 
     fn suspended(&mut self, _event_loop: &ActiveEventLoop) {}
@@ -131,17 +178,20 @@ impl ApplicationHandler for App {
                         return;
                     };
 
-                    let query: Query<(&ModelRenderer, &Transform)> =
+                    let query: Query<(&ModelRenderer, Option<&SkinnedMesh>)> =
                         Query::new(&self.engine.ecs_world);
 
-                    for (model_renderer, _) in query.iter() {
+                    for (model_renderer, skinned) in query.iter() {
                         let Some(mesh) = self.engine.ecs_world.get_asset(model_renderer.model)
                         else {
                             log_warn!(reason: "stale or missing mesh handle", "skipping entity");
                             continue;
                         };
 
-                        frame_info.meshes.push(mesh.clone());
+                        frame_info.draws.push(DrawInfo {
+                            mesh: mesh.clone(),
+                            joint_matrices: skinned.map(|s| s.joint_matrices.clone()),
+                        });
                     }
 
                     renderer.render(frame_info).unwrap();

@@ -13,6 +13,8 @@ pub struct Vertex {
     pub position: [f32; 3],
     pub normal: [f32; 3],
     pub uv: [f32; 2],
+    pub joints: [u16; 4],  // offset 32
+    pub weights: [f32; 4], // offset 40
 }
 
 impl VertexDefinition for Vertex {
@@ -43,6 +45,18 @@ impl VertexDefinition for Vertex {
                 .location(2)
                 .format(vk::Format::R32G32_SFLOAT)
                 .offset(24),
+            // Joint indices (into the skin's joint list)
+            vk::VertexInputAttributeDescription::default()
+                .binding(0)
+                .location(3)
+                .format(vk::Format::R16G16B16A16_UINT)
+                .offset(32),
+            // Blend weights per joint
+            vk::VertexInputAttributeDescription::default()
+                .binding(0)
+                .location(4)
+                .format(vk::Format::R32G32B32A32_SFLOAT)
+                .offset(40),
         ]
     }
 }
