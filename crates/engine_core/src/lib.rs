@@ -48,6 +48,7 @@ impl Engine {
             let asset_map = (registration.create_asset_map)();
             ecs_world.assets.insert(type_id, asset_map);
         }
+        ecs_world.add_resource(input::InputManager::new());
         Self { ecs_world }
     }
 

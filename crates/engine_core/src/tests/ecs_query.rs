@@ -168,7 +168,7 @@ fn single_returns_the_only_matching_item() {
     spawn_with!(world, Position { x: 9.0, y: 9.0 }, Player);
     spawn_with!(world, Position { x: 0.0, y: 0.0 }); // not a Player, ignored
 
-    let single: Single<&Position, With<Player>> = Single::new(&world);
+    let single: Single<&Position, With<Player>> = Single::new(&world).unwrap();
     assert_eq!(**single, Position { x: 9.0, y: 9.0 });
 }
 
@@ -176,7 +176,7 @@ fn single_returns_the_only_matching_item() {
 #[should_panic(expected = "no matching entity found")]
 fn single_panics_when_no_match() {
     let world = World::new();
-    let _single: Single<&Position, With<Player>> = Single::new(&world);
+    let _single: Single<&Position, With<Player>> = Single::new(&world).unwrap();
 }
 
 #[test]
@@ -186,7 +186,7 @@ fn single_panics_when_multiple_matches() {
     spawn_with!(world, Position { x: 1.0, y: 1.0 }, Player);
     spawn_with!(world, Position { x: 2.0, y: 2.0 }, Player);
 
-    let _single: Single<&Position, With<Player>> = Single::new(&world);
+    let _single: Single<&Position, With<Player>> = Single::new(&world).unwrap();
 }
 
 #[test]
@@ -195,7 +195,7 @@ fn single_mut_deref_allows_mutation() {
     spawn_with!(world, Position { x: 0.0, y: 0.0 }, Player);
 
     {
-        let mut single: Single<&mut Position, With<Player>> = Single::new(&world);
+        let mut single: Single<&mut Position, With<Player>> = Single::new(&world).unwrap();
         single.x = 42.0;
     }
 

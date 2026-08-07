@@ -20,6 +20,7 @@ use crate::{
         query::query::Query,
         systems::{StartSystem, run_system, scheduler::Schedule},
     },
+    input::InputManager,
     log_error, log_warn,
     networking::{client::NetworkClient, snapshot::Snapshot},
     rendering::{
@@ -93,6 +94,7 @@ pub fn apply_snapshot(world: &mut World, message: &[u8]) {
 }
 impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        event_loop.listen_device_events(winit::event_loop::DeviceEvents::Always);
         self.rendering_info = Some(RenderingInfo::new(event_loop));
         self.renderer = Some(VulkanRenderer::new(self.rendering_info.clone().unwrap()).unwrap());
         let context = &self.rendering_info.as_ref().unwrap().context;
@@ -206,6 +208,10 @@ impl ApplicationHandler for App {
             let _ = renderer.handle_ui_event(&event.clone());
         }
 
+        if let Ok(mut input) = self.engine.ecs_world.get_resource_mut::<InputManager>() {
+            input.process_window_event(&event);
+        }
+
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. } => {
@@ -232,6 +238,10 @@ impl ApplicationHandler for App {
 
                 self.tick_network(frame_delta).unwrap();
                 self.schedule.tick(&mut self.engine.ecs_world).unwrap();
+
+                if let Ok(mut input) = self.engine.ecs_world.get_resource_mut::<InputManager>() {
+                    input.update();
+                }
 
                 let Some(mut frame_info) = self.engine.return_renderable() else {
                     log_error!("No active camera, not rendering");
@@ -266,6 +276,17 @@ impl ApplicationHandler for App {
     fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
         if let Some(info) = &self.rendering_info {
             info.window.request_redraw();
+        }
+    }
+
+    fn device_event(
+        &mut self,
+        _event_loop: &ActiveEventLoop,
+        _device_id: winit::event::DeviceId,
+        event: winit::event::DeviceEvent,
+    ) {
+        if let Ok(mut input) = self.engine.ecs_world.get_resource_mut::<InputManager>() {
+            input.process_device_event(&event);
         }
     }
 }

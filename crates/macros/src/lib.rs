@@ -44,11 +44,8 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
                 type_name: #name_str,
                 create_column: || #engine_core::ecs::components::archetype::Column::new::<#ident>(),
 
-                erialize: |c| {
-                    let concrete = c.as_any().downcast_ref::<#ident>().unwrap();
-                    bincode::serialize(concrete).unwrap()
-                },
-                deserialize: |bytes| Box::new(bincode::deserialize::<#ident>(bytes).unwrap()),
+                serialize_raw: |_| panic!("{} is not networked — cannot serialize", #name_str),
+                deserialize_raw: |_| panic!("{} is not networked — cannot deserialize", #name_str),
             }
         }
     };
