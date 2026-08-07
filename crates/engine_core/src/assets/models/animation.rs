@@ -1,5 +1,5 @@
 use anyhow::Result;
-use macros::{Asset, Component, fixed_update};
+use macros::{Asset, component, fixed_update};
 use nalgebra::{Matrix4, UnitQuaternion, Vector3};
 
 use crate::{
@@ -51,13 +51,13 @@ pub struct Skeleton {
     pub joint_nodes: Vec<usize>,
 }
 
-#[derive(Component, Debug, Clone)]
+#[component]
 pub struct SkinnedMesh {
     pub skeleton: Handle<Skeleton>,
     pub joint_matrices: Vec<Matrix4<f32>>,
 }
 
-#[derive(Component, Debug, Clone)]
+#[component]
 pub struct AnimationPlayer {
     pub clip: Handle<AnimationClip>,
     pub time: f32,

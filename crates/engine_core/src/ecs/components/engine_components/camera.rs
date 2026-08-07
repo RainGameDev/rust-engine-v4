@@ -1,4 +1,4 @@
-use macros::Component;
+use macros::{Component, component};
 use nalgebra::{Matrix4, Orthographic3, Perspective3, Point3, Vector3};
 
 use crate::ecs::components::engine_components::transform::Transform;
@@ -79,7 +79,7 @@ impl Projection {
     }
 }
 
-#[derive(Component, Debug, Clone)]
+#[component]
 pub struct Camera {
     pub projection: Projection,
     /// Whether this camera is currently used to render.
@@ -122,8 +122,8 @@ impl Camera {
     }
 }
 
-#[derive(Component, Debug, Clone)]
+#[component]
 pub struct GameCamera;
 
-#[derive(Component, Debug, Clone)]
+#[component]
 pub struct EditorCamera;

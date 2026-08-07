@@ -1,9 +1,9 @@
-use macros::Component;
+use macros::component;
 
 use crate::ecs::entities::Entity;
 
-#[derive(Component, Clone, Debug)]
+#[component]
 pub struct Parent(pub Entity);
 
-#[derive(Component, Clone, Debug)]
+#[component]
 pub struct Children(pub Vec<Entity>);

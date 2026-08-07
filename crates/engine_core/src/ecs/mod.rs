@@ -149,7 +149,7 @@ impl World {
             }
         }
     }
-    pub(crate) fn entity_counter(&self) -> Arc<AtomicU32> {
+    pub fn entity_counter(&self) -> Arc<AtomicU32> {
         self.next_index.clone()
     }
     pub(crate) fn spawn_reserved(&mut self, entity: Entity) {
@@ -221,6 +221,17 @@ impl World {
     }
 
     // --- Components ---
+
+    pub(crate) fn get_component_raw_ptr(
+        &self,
+        entity: Entity,
+        type_id: TypeId,
+    ) -> Option<*const u8> {
+        let location = self.locations.get(&entity)?;
+        let archetype = &self.archetypes[location.archetype_id];
+        let column = archetype.columns.get(&type_id)?;
+        Some(unsafe { column.get_raw(location.row) as *const u8 })
+    }
 
     /// Adds component of type `T` to the provided entity.
     pub fn add_component<T: Component>(&mut self, entity: Entity, component: T) {
@@ -372,5 +383,9 @@ impl World {
     }
     pub fn archetypes(&self) -> &[Archetype] {
         &self.archetypes
+    }
+    pub fn archetype_signature_of(&self, entity: Entity) -> &[TypeId] {
+        let loc = self.locations.get(&entity).expect("entity not found");
+        &self.archetypes[loc.archetype_id].signature
     }
 }

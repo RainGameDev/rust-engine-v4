@@ -7,9 +7,6 @@ use std::fmt::Debug;
 
 use macros::Component;
 
-#[derive(Component, Clone, Debug)]
-pub struct Hi;
-
 pub type BoxedComponent = Box<dyn Component>;
 
 pub trait Component: Any + Debug + Send + Sync {

@@ -1,5 +1,5 @@
 use anyhow::Result;
-use macros::Component;
+use macros::component;
 use nalgebra::{Matrix4, UnitQuaternion, Vector3};
 
 use crate::ecs::{
@@ -9,7 +9,7 @@ use crate::ecs::{
     query::{filter::Without, query::Query},
 };
 
-#[derive(Component, Clone, Debug)]
+#[component(networked)]
 pub struct Transform {
     pub position: Vector3<f32>,
     pub rotation: UnitQuaternion<f32>,

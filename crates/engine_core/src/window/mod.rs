@@ -1,4 +1,7 @@
-use std::path::Path;
+use std::{
+    path::Path,
+    time::{Duration, Instant},
+};
 
 use anyhow::Result;
 use nalgebra::Vector3;
@@ -12,11 +15,13 @@ use winit::{
 use crate::{
     Engine,
     ecs::{
+        World,
         components::engine_components::{model_renderer::ModelRenderer, transform::Transform},
         query::query::Query,
         systems::{StartSystem, run_system, scheduler::Schedule},
     },
     log_error, log_warn,
+    networking::{client::NetworkClient, snapshot::Snapshot},
     rendering::{
         core::{frame_info::DrawInfo, model::GpuMesh},
         egui::context::EguiContext,
@@ -24,7 +29,10 @@ use crate::{
     utils::directory_check::load_directory,
 };
 use crate::{
-    assets::models::{animation::{AnimationClip, AnimationPlayer, Skeleton, SkinnedMesh}, gltf::load_gltf_file},
+    assets::models::{
+        animation::{AnimationClip, AnimationPlayer, Skeleton, SkinnedMesh},
+        gltf::load_gltf_file,
+    },
     rendering::{
         core::frame_info::update_camera_aspect_ratio,
         vulkan::{RenderingInfo, VulkanRenderer},
@@ -37,20 +45,52 @@ pub struct App {
     renderer: Option<VulkanRenderer>,
     engine: Engine,
     schedule: Schedule,
+    network: Option<NetworkClient>,
+    last_frame: Instant,
+    auto_connect_addr: Option<std::net::SocketAddr>,
 }
 
 impl App {
-    pub fn new(engine: Engine) -> Self {
+    pub fn new(engine: Engine, auto_connect_addr: Option<std::net::SocketAddr>) -> Self {
         Self {
             rendering_info: None,
             renderer: None,
             engine,
-            // set to the refresh rate for physics and such
             schedule: Schedule::new(60.0),
+            network: None,
+            last_frame: Instant::now(),
+            auto_connect_addr,
         }
     }
-}
+    pub fn connect_to_server(&mut self, addr: std::net::SocketAddr) -> Result<()> {
+        self.network = Some(NetworkClient::connect(addr)?);
+        Ok(())
+    }
 
+    fn tick_network(&mut self, delta: Duration) -> Result<()> {
+        let Some(network) = &mut self.network else {
+            return Ok(());
+        };
+
+        network.client.update(delta);
+        network.transport.update(delta, &mut network.client)?;
+
+        if network.client.is_connected() {
+            while let Some(message) = network.client.receive_message(0) {
+                apply_snapshot(&mut self.engine.ecs_world, &message); // game-layer function
+            }
+        }
+
+        network.transport.send_packets(&mut network.client);
+        Ok(())
+    }
+}
+pub fn apply_snapshot(world: &mut World, message: &[u8]) {
+    let snapshot: Snapshot = bincode::deserialize(message).unwrap_or_default();
+    for entity_state in snapshot.entities {
+        // find-or-spawn local entity by NetworkId, write Transform/Health/etc.
+    }
+}
 impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         self.rendering_info = Some(RenderingInfo::new(event_loop));
@@ -72,7 +112,10 @@ impl ApplicationHandler for App {
                         crate::log_info!("loaded mesh: {} -> {:?}", model_path, handle);
                     }
                     for skeleton in loaded.skeletons {
-                        let handle = self.engine.ecs_world.add_asset(skeleton, model_path.clone());
+                        let handle = self
+                            .engine
+                            .ecs_world
+                            .add_asset(skeleton, model_path.clone());
                         crate::log_info!("loaded skeleton: {} -> {:?}", model_path, handle);
                     }
                     for clip in loaded.animations {
@@ -138,6 +181,13 @@ impl ApplicationHandler for App {
         } else {
             crate::log_warn!(reason: "no skeleton or animation in test.glb", "model spawned without animation");
         }
+
+        if let Some(addr) = self.auto_connect_addr {
+            match self.connect_to_server(addr) {
+                Ok(()) => crate::log_info!("connecting to {addr}..."),
+                Err(err) => crate::log_error!(reason: "failed to start connection", "{err:?}"),
+            }
+        }
     }
 
     fn suspended(&mut self, _event_loop: &ActiveEventLoop) {}
@@ -169,34 +219,45 @@ impl ApplicationHandler for App {
                 }
             }
             WindowEvent::RedrawRequested => {
-                if let Some(renderer) = &mut self.renderer {
-                    renderer.begin_ui();
-                    self.schedule.tick(&mut self.engine.ecs_world).unwrap();
+                let now = Instant::now();
+                let frame_delta = now.duration_since(self.last_frame);
+                self.last_frame = now;
 
-                    let Some(mut frame_info) = self.engine.return_renderable() else {
-                        log_error!("No active camera, not rendering");
-                        return;
+                let mut renderer = match self.renderer.take() {
+                    Some(r) => r,
+                    None => return,
+                };
+
+                renderer.begin_ui();
+
+                self.tick_network(frame_delta).unwrap();
+                self.schedule.tick(&mut self.engine.ecs_world).unwrap();
+
+                let Some(mut frame_info) = self.engine.return_renderable() else {
+                    log_error!("No active camera, not rendering");
+                    self.renderer = Some(renderer);
+                    return;
+                };
+
+                let query: Query<(&ModelRenderer, Option<&SkinnedMesh>)> =
+                    Query::new(&self.engine.ecs_world);
+
+                for (model_renderer, skinned) in query.iter() {
+                    let Some(mesh) = self.engine.ecs_world.get_asset(model_renderer.model) else {
+                        log_warn!(reason: "stale or missing mesh handle", "skipping entity");
+                        continue;
                     };
 
-                    let query: Query<(&ModelRenderer, Option<&SkinnedMesh>)> =
-                        Query::new(&self.engine.ecs_world);
-
-                    for (model_renderer, skinned) in query.iter() {
-                        let Some(mesh) = self.engine.ecs_world.get_asset(model_renderer.model)
-                        else {
-                            log_warn!(reason: "stale or missing mesh handle", "skipping entity");
-                            continue;
-                        };
-
-                        frame_info.draws.push(DrawInfo {
-                            mesh: mesh.clone(),
-                            joint_matrices: skinned.map(|s| s.joint_matrices.clone()),
-                        });
-                    }
-
-                    renderer.render(frame_info).unwrap();
-                    renderer.end_ui().unwrap();
+                    frame_info.draws.push(DrawInfo {
+                        mesh: mesh.clone(),
+                        joint_matrices: skinned.map(|s| s.joint_matrices.clone()),
+                    });
                 }
+
+                renderer.render(frame_info).unwrap();
+                renderer.end_ui().unwrap();
+
+                self.renderer = Some(renderer);
             }
             _ => {}
         }
@@ -209,8 +270,8 @@ impl ApplicationHandler for App {
     }
 }
 
-pub fn run(engine: Engine) -> Result<()> {
-    let mut app = App::new(engine);
+pub fn run(engine: Engine, auto_connect_addr: Option<std::net::SocketAddr>) -> Result<()> {
+    let mut app = App::new(engine, auto_connect_addr);
     run_system(&mut app.engine.ecs_world, StartSystem::sorted())?;
     let event_loop = EventLoop::new()?;
     event_loop.run_app(&mut app)?;

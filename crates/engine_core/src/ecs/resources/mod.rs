@@ -6,12 +6,13 @@ use std::fmt::Debug;
 use anyhow::{Result, anyhow};
 
 use crate::log_warn;
+
 pub mod resource_registration;
 
 pub type BoxedResource = Box<dyn Resource>;
 
 /// A hashmap that contains all resources.
-#[derive(Default, Clone)]
+#[derive(Default)]
 pub struct ResourceMap {
     pub(crate) map: HashMap<TypeId, RefCell<Box<dyn Resource>>>,
 }
@@ -32,6 +33,7 @@ impl ResourceMap {
         self.map
             .insert(TypeId::of::<T>(), RefCell::new(Box::new(resource)));
     }
+
     /// Get a resource from the map
     pub fn get<T: Resource + 'static>(&self) -> Result<std::cell::Ref<'_, T>> {
         let cell = self
@@ -67,7 +69,6 @@ impl ResourceMap {
 }
 
 pub trait Resource: Any + Debug + Send + Sync {
-    fn clone_box(&self) -> BoxedResource;
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
 
@@ -78,21 +79,12 @@ pub trait Resource: Any + Debug + Send + Sync {
 
 impl<T> Resource for T
 where
-    T: Any + Debug + Clone + Send + Sync,
+    T: Any + Debug + Send + Sync,
 {
-    fn clone_box(&self) -> BoxedResource {
-        Box::new(self.clone())
-    }
     fn as_any(&self) -> &dyn Any {
         self
     }
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
-    }
-}
-
-impl Clone for BoxedResource {
-    fn clone(&self) -> BoxedResource {
-        self.clone_box()
     }
 }

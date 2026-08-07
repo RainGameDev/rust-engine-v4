@@ -394,7 +394,7 @@ impl VulkanRenderer {
 
     pub fn end_ui(&mut self) -> Result<()> {
         let frame = &self.frames[self.current_frame];
-        let full_output = self.ui_renderer.context.end_pass();
+        let mut full_output = self.ui_renderer.context.end_pass();
         let mut state = self.ui_renderer.state.lock().unwrap();
         let mut renderer = self.ui_renderer.renderer.lock().unwrap();
 
@@ -416,8 +416,8 @@ impl VulkanRenderer {
             let texture_updates: Vec<(TextureId, ImageDelta)> = full_output
                 .textures_delta
                 .set
-                .iter()
-                .flat_map(|(id, deltas)| deltas.iter().map(move |delta| (*id, delta.clone())))
+                .drain()
+                .flat_map(|(id, deltas)| deltas.into_iter().map(move |delta| (id, delta)))
                 .collect();
             renderer.set_textures(
                 self.context.queues[self.context.queue_families.graphics as usize],
@@ -488,7 +488,7 @@ impl VulkanRenderer {
 
         // Defer these frees until next frame (see `ui_pending_texture_frees`).
         self.ui_renderer.pending_texture_frees =
-            full_output.textures_delta.free.iter().copied().collect();
+            full_output.textures_delta.free.drain().collect();
         Ok(())
     }
 

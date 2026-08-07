@@ -3,6 +3,7 @@ pub mod ecs;
 pub mod ffi;
 pub mod input;
 pub mod logging;
+pub mod networking;
 pub mod rendering;
 pub mod time;
 pub mod utils;
@@ -11,8 +12,6 @@ pub mod window;
 #[cfg(test)]
 mod tests;
 
-use std::path::Path;
-
 pub use inventory;
 pub use macros::{Component, Resource};
 pub use macros::{fixed_update, late_update, start, update};
@@ -20,11 +19,9 @@ pub use macros::{fixed_update, late_update, start, update};
 use anyhow::Result;
 use nalgebra::Vector3;
 
-use crate::ecs::components::engine_components::model_renderer::ModelRenderer;
+use crate::ecs::commands::Commands;
 use crate::ecs::systems::param::ResMut;
-use crate::rendering::core::model::GpuMesh;
 use crate::rendering::egui::context::EguiContext;
-use crate::utils::directory_check::load_directory;
 use crate::{
     assets::AssetRegistration,
     ecs::{
@@ -46,17 +43,6 @@ pub struct Engine {
 impl Engine {
     pub fn new() -> Self {
         let mut ecs_world = World::default();
-        let camera = ecs_world.spawn();
-        ecs_world.insert_component(
-            camera,
-            Box::new(Transform::from_position(Vector3::new(0.0, 0.0, 100.0))),
-        );
-        ecs_world.insert_component(
-            camera,
-            Box::new(Camera::perspective(60.0, 16.0 / 9.0, 0.1, 1000.0)),
-        );
-        ecs_world.insert_component(camera, Box::new(GameCamera));
-
         for registration in inventory::iter::<AssetRegistration> {
             let type_id = (registration.type_id)();
             let asset_map = (registration.create_asset_map)();
@@ -83,9 +69,9 @@ impl Default for Engine {
     }
 }
 
-pub fn init_core() -> Result<()> {
+pub fn init_core(auto_connect_addr: Option<std::net::SocketAddr>) -> Result<()> {
     let engine = Engine::new();
-    window::run(engine)
+    window::run(engine, auto_connect_addr)
 }
 
 #[update]
@@ -98,5 +84,18 @@ pub fn test(context: ResMut<EguiContext>) -> Result<()> {
             });
         });
     });
+    Ok(())
+}
+
+#[start]
+pub fn start(commands: &mut Commands) -> Result<()> {
+    let camera = commands.spawn();
+    commands.add_component(
+        camera,
+        Transform::from_position(Vector3::new(0.0, 0.0, 100.0)),
+    );
+    commands.add_component(camera, Camera::perspective(60.0, 16.0 / 9.0, 0.1, 1000.0));
+    commands.add_component(camera, GameCamera);
+
     Ok(())
 }

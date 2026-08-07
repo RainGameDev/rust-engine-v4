@@ -4,7 +4,8 @@ members = [
     "crates/macros",
     "crates/engine_core",
     "crates/editor",
-    "crates/game",
+    "crates/game", 
+    "crates/server", "crates/client",
 ]
 
 [workspace.package]
@@ -23,8 +24,12 @@ gltf = "1.4.1"
 hot-lib-reloader = "0.7"
 inventory = "0.3.24"
 libloading = "0.8"
-nalgebra = "0.35.0"
+nalgebra =  { version = "0.35.0", features = ["serde", "serde-serialize"] }
 rand = "0.10.2"
 walkdir = "2.5.0"
 winit = "0.30.5"
+renet = "1.2.0"
+renet_netcode = "1"
+bincode = "1"
+serde = { version = "1", features = ["derive"] }
 

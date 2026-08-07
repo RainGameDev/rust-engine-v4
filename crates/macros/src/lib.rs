@@ -43,6 +43,12 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
                 type_id: ::std::any::TypeId::of::<#ident>,
                 type_name: #name_str,
                 create_column: || #engine_core::ecs::components::archetype::Column::new::<#ident>(),
+
+                erialize: |c| {
+                    let concrete = c.as_any().downcast_ref::<#ident>().unwrap();
+                    bincode::serialize(concrete).unwrap()
+                },
+                deserialize: |bytes| Box::new(bincode::deserialize::<#ident>(bytes).unwrap()),
             }
         }
     };
@@ -136,7 +142,7 @@ pub fn fixed_update(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
 #[proc_macro_attribute]
 pub fn start(_attr: TokenStream, item: TokenStream) -> TokenStream {
-    system_attribute(item, "StartSystem", true)
+    system_attribute(item, "StartSystem", false)
 }
 fn system_attribute(item: TokenStream, kind: &str, takes_delta: bool) -> TokenStream {
     let input = parse_macro_input!(item as syn::ItemFn);
@@ -210,6 +216,60 @@ fn system_attribute(item: TokenStream, kind: &str, takes_delta: bool) -> TokenSt
                 func: #wrapper_ident,
                 priority: 0,
         }
+        }
+    };
+
+    expanded.into()
+}
+#[proc_macro_attribute]
+pub fn component(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let networked = attr.to_string().contains("networked"); 
+    component_attribute(item, networked)
+}
+
+fn component_attribute(item: TokenStream, networked: bool) -> TokenStream {
+    let input = parse_macro_input!(item as DeriveInput);
+    let ident = &input.ident;
+    let name_str = ident.to_string();
+    let engine_core = resolve_engine_core();
+
+    let derives = if networked {
+        quote! { #[derive(Debug, Clone, ::serde::Serialize, ::serde::Deserialize)] }
+    } else {
+        quote! { #[derive(Debug, Clone)] }
+    };
+
+    let serialize_fields = if networked {
+        quote! {
+            serialize_raw: |ptr| {
+                let concrete = unsafe { &*(ptr as *const #ident) };
+                ::bincode::serialize(concrete).unwrap()
+            },
+            deserialize_raw: |bytes| Box::new(::bincode::deserialize::<#ident>(bytes).unwrap()),
+        }
+    } else {
+        quote! {
+            serialize_raw: |_| panic!("{} is not networked — cannot serialize", #name_str),
+            deserialize_raw: |_| panic!("{} is not networked — cannot deserialize", #name_str),
+        }
+    };
+
+    let expanded = quote! {
+        #derives
+        #input
+
+        const _: fn() = || {
+            fn assert_component<T: #engine_core::ecs::components::Component>() {}
+            assert_component::<#ident>();
+        };
+
+        #engine_core::inventory::submit! {
+            #engine_core::ecs::components::component_registry::ComponentRegistration {
+                type_id: ::std::any::TypeId::of::<#ident>,
+                type_name: #name_str,
+                create_column: || #engine_core::ecs::components::archetype::Column::new::<#ident>(),
+                #serialize_fields
+            }
         }
     };
 

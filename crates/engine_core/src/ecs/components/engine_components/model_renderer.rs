@@ -1,9 +1,9 @@
-use macros::Component;
+use macros::component;
 
 use crate::{assets::core::handle::Handle, rendering::core::model::GpuMesh};
 
 /// TODO: Give a reference to a model asset handle
-#[derive(Component, Clone, Debug)]
+#[component]
 pub struct ModelRenderer {
     pub model: Handle<GpuMesh>,
 }

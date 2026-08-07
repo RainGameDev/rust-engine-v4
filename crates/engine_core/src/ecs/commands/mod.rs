@@ -37,7 +37,7 @@ pub struct Commands {
 }
 
 impl Commands {
-    pub(crate) fn new(counter: Arc<AtomicU32>) -> Self {
+    pub fn new(counter: Arc<AtomicU32>) -> Self {
         Self {
             counter,
             queue: Vec::new(),
@@ -86,7 +86,7 @@ impl Commands {
         self.set_parent(child, None);
     }
 
-    pub(crate) fn apply(self, world: &mut World) {
+    pub fn apply(self, world: &mut World) {
         for command in self.queue {
             match command {
                 Command::Spawn { entity } => world.spawn_reserved(entity),
