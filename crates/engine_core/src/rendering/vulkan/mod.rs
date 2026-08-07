@@ -327,7 +327,7 @@ impl VulkanRenderer {
                     &[],
                 );
 
-                let mvp = frame_info.view_projection;
+                let mvp = frame_info.view_projection * draw.model;
                 let push_constants = PushConstants {
                     mvp: matrix_to_push_constant(&mvp),
                 };

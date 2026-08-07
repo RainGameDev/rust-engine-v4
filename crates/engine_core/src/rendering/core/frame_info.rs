@@ -20,6 +20,8 @@ pub struct FrameInfo {
 #[derive(Clone, Debug)]
 pub struct DrawInfo {
     pub mesh: GpuMesh,
+    /// model matrix for this entity.
+    pub model: Matrix4<f32>,
     /// Per-entity joint matrices (in the `Skeleton`'s joint order). `None`
     /// for static meshes, which bind an identity joint buffer.
     pub joint_matrices: Option<Vec<Matrix4<f32>>>,

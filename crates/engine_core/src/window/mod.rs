@@ -30,10 +30,7 @@ use crate::{
     utils::directory_check::load_directory,
 };
 use crate::{
-    assets::models::{
-        animation::{AnimationClip, AnimationPlayer, Skeleton, SkinnedMesh},
-        gltf::load_gltf_file,
-    },
+    assets::models::{animation::SkinnedMesh, gltf::load_gltf_file},
     rendering::{
         core::frame_info::update_camera_aspect_ratio,
         vulkan::{RenderingInfo, VulkanRenderer},
@@ -134,55 +131,19 @@ impl ApplicationHandler for App {
         let context = EguiContext(self.renderer.as_ref().unwrap().get_egui_context());
         self.engine.ecs_world.add_resource(context);
 
-        let model = self.engine.ecs_world.spawn();
+        let cube = self.engine.ecs_world.spawn();
         self.engine
             .ecs_world
-            .add_component(model, Transform::from_position(Vector3::new(0.0, 0.0, 0.0)));
+            .add_component(cube, Transform::from_position(Vector3::new(0.0, 0.0, 0.0)));
 
-        let model_asset = self
+        let cube_asset = self
             .engine
             .ecs_world
-            .get_asset_handle::<GpuMesh>("meshes/test.glb")
+            .get_asset_handle::<GpuMesh>("meshes/cube.glb")
             .unwrap();
         self.engine
             .ecs_world
-            .add_component(model, ModelRenderer { model: model_asset });
-
-        if let (Some(skeleton_asset), Some(clip_asset)) = (
-            self.engine
-                .ecs_world
-                .get_asset_handle::<Skeleton>("meshes/test.glb"),
-            self.engine
-                .ecs_world
-                .get_asset_handle::<AnimationClip>("meshes/test.glb"),
-        ) {
-            let joint_count = self
-                .engine
-                .ecs_world
-                .get_asset(skeleton_asset)
-                .map(|skeleton| skeleton.joint_parents.len())
-                .unwrap_or(0);
-
-            self.engine.ecs_world.add_component(
-                model,
-                SkinnedMesh {
-                    skeleton: skeleton_asset,
-                    joint_matrices: vec![nalgebra::Matrix4::identity(); joint_count],
-                },
-            );
-
-            self.engine.ecs_world.add_component(
-                model,
-                AnimationPlayer {
-                    clip: clip_asset,
-                    ..AnimationPlayer::default()
-                },
-            );
-
-            crate::log_info!("added skinned mesh + animation player to test model");
-        } else {
-            crate::log_warn!(reason: "no skeleton or animation in test.glb", "model spawned without animation");
-        }
+            .add_component(cube, ModelRenderer { model: cube_asset });
 
         if let Some(addr) = self.auto_connect_addr {
             match self.connect_to_server(addr) {
@@ -249,10 +210,10 @@ impl ApplicationHandler for App {
                     return;
                 };
 
-                let query: Query<(&ModelRenderer, Option<&SkinnedMesh>)> =
+                let query: Query<(&Transform, &ModelRenderer, Option<&SkinnedMesh>)> =
                     Query::new(&self.engine.ecs_world);
 
-                for (model_renderer, skinned) in query.iter() {
+                for (transform, model_renderer, skinned) in query.iter() {
                     let Some(mesh) = self.engine.ecs_world.get_asset(model_renderer.model) else {
                         log_warn!(reason: "stale or missing mesh handle", "skipping entity");
                         continue;
@@ -260,6 +221,7 @@ impl ApplicationHandler for App {
 
                     frame_info.draws.push(DrawInfo {
                         mesh: mesh.clone(),
+                        model: transform.to_matrix(),
                         joint_matrices: skinned.map(|s| s.joint_matrices.clone()),
                     });
                 }
