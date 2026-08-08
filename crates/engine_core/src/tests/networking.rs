@@ -1,15 +1,12 @@
 use std::net::UdpSocket;
 use std::time::{Duration, Instant, SystemTime};
 
-use renet::{
-    ConnectionConfig, DefaultChannel, RenetServer, ServerEvent,
-};
-use renet_netcode::{
-    NetcodeServerTransport, ServerAuthentication, ServerConfig,
-};
+use renet::{ConnectionConfig, RenetServer, ServerEvent};
+use renet_netcode::{NetcodeServerTransport, ServerAuthentication, ServerConfig};
 
 use crate::networking::{
-    Networked, client::NetworkClient, packet::ClientMessage, snapshot::{EntitySnapshot, Snapshot},
+    INPUT_CHANNEL, Networked, SNAPSHOT_CHANNEL, client::NetworkClient,
+    packet::{Packet, PlayerMovement, ServerMessage}, snapshot::{EntitySnapshot, Snapshot},
 };
 
 const PROTOCOL_ID: u64 = 7;
@@ -40,14 +37,9 @@ fn pump_once(
     transport: &mut NetcodeServerTransport,
     delta: Duration,
 ) {
-    client.client.update(delta);
-    client
-        .transport
-        .update(delta, &mut client.client)
-        .unwrap();
+    client.tick(delta).unwrap();
     server.update(delta);
     transport.update(delta, server).unwrap();
-    client.transport.send_packets(&mut client.client);
     transport.send_packets(server);
 }
 
@@ -75,22 +67,22 @@ fn movement_round_trip() {
     }
     assert!(connected, "client never connected to the server");
 
-    // 2. Client -> server: PlayerMovement on the ReliableOrdered channel.
-    let message = bincode::serialize(&ClientMessage::PlayerMovement([1.0, 0.0, 0.0])).unwrap();
-    client.client.send_message(DefaultChannel::ReliableOrdered, message);
+    // 2. Client -> server: PlayerMovement on the input channel.
+    client
+        .send(INPUT_CHANNEL, &PlayerMovement { direction: [1.0, 0.0, 0.0] })
+        .unwrap();
 
     let deadline = Instant::now() + Duration::from_secs(5);
     let mut received = false;
     while Instant::now() < deadline {
         pump_once(&mut client, &mut server, &mut transport, delta);
         for client_id in server.clients_id() {
-            while let Some(message) =
-                server.receive_message(client_id, DefaultChannel::ReliableOrdered)
+            while let Some(frame) =
+                server.receive_message(client_id, renet::DefaultChannel::ReliableOrdered)
             {
-                let client_message: ClientMessage = bincode::deserialize(&message).unwrap();
-                assert!(
-                    matches!(client_message, ClientMessage::PlayerMovement(d) if d == [1.0, 0.0, 0.0])
-                );
+                assert_eq!(u32::from_le_bytes(frame[..4].try_into().unwrap()), PlayerMovement::ID);
+                let client_message: PlayerMovement = bincode::deserialize(&frame[4..]).unwrap();
+                assert_eq!(client_message.direction, [1.0, 0.0, 0.0]);
                 received = true;
             }
         }
@@ -101,29 +93,30 @@ fn movement_round_trip() {
     }
     assert!(received, "server never received the PlayerMovement");
 
-    // 3. Server -> client: Snapshot on the Unreliable channel.
+    // 3. Server -> client: Snapshot on the snapshot channel.
     let snapshot = Snapshot {
         entities: vec![EntitySnapshot {
             network_id: 1,
-            components: vec![("Networked".to_string(), bincode::serialize(&Networked { id: 1 }).unwrap())],
+            components: vec![(
+                "Networked".to_string(),
+                bincode::serialize(&Networked { id: 1 }).unwrap(),
+            )],
         }],
     };
     server.broadcast_message(
-        DefaultChannel::Unreliable,
-        bincode::serialize(&snapshot).unwrap(),
+        renet::DefaultChannel::Unreliable,
+        bincode::serialize(&ServerMessage::Snapshot(snapshot)).unwrap(),
     );
 
     let deadline = Instant::now() + Duration::from_secs(5);
     let mut got_snapshot = false;
     while Instant::now() < deadline {
         pump_once(&mut client, &mut server, &mut transport, delta);
-        if client.client.is_connected() {
-            while let Some(message) = client.client.receive_message(DefaultChannel::Unreliable) {
-                let snapshot: Snapshot = bincode::deserialize(&message).unwrap();
-                assert_eq!(snapshot.entities.len(), 1);
-                assert_eq!(snapshot.entities[0].network_id, 1);
-                got_snapshot = true;
-            }
+        for message in client.drain::<ServerMessage>(SNAPSHOT_CHANNEL).unwrap() {
+            let ServerMessage::Snapshot(snapshot) = message;
+            assert_eq!(snapshot.entities.len(), 1);
+            assert_eq!(snapshot.entities[0].network_id, 1);
+            got_snapshot = true;
         }
         if got_snapshot {
             break;

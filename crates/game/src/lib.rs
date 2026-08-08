@@ -3,10 +3,10 @@ use engine_core::ecs::commands::Commands;
 use engine_core::ecs::systems::param::{Res, ResMut};
 use engine_core::input::action::{ActionBinding, InputSource};
 use engine_core::input::InputManager;
+use engine_core::networking::INPUT_CHANNEL;
 use engine_core::networking::client::NetworkClient;
-use engine_core::networking::packet::ClientMessage;
+use engine_core::networking::packet::PlayerMovement;
 use engine_core::{Resource, start, update};
-use renet::DefaultChannel;
 use winit::keyboard::{KeyCode, PhysicalKey};
 
 const MOVE_X: &str = "move_x";
@@ -44,7 +44,7 @@ pub fn send_movement(
     mut network: ResMut<NetworkClient>,
     mut last_direction: ResMut<LastSentDirection>,
 ) -> Result<()> {
-    if !network.client.is_connected() {
+    if !network.is_connected() {
         return Ok(());
     }
 
@@ -53,10 +53,7 @@ pub fn send_movement(
         return Ok(());
     }
 
-    let message = bincode::serialize(&ClientMessage::PlayerMovement(direction))?;
-    network
-        .client
-        .send_message(DefaultChannel::ReliableOrdered, message);
+    network.send(INPUT_CHANNEL, &PlayerMovement { direction })?;
     last_direction.0 = direction;
     Ok(())
 }

@@ -14,22 +14,14 @@ use winit::{
 use crate::{
     Engine,
     ecs::{
-        World,
-        components::{
-            component_registry::find_component_registration_by_name,
-            engine_components::{model_renderer::ModelRenderer, transform::Transform},
-        },
-        entities::Entity,
+        components::engine_components::{model_renderer::ModelRenderer, transform::Transform},
         query::query::Query,
         systems::{StartSystem, run_system, scheduler::Schedule},
     },
     input::InputManager,
     log_error, log_warn,
-    networking::{Networked, client::NetworkClient, snapshot::Snapshot},
-    rendering::{
-        core::{frame_info::DrawInfo, model::GpuMesh},
-        egui::context::EguiContext,
-    },
+    networking::client::{NetworkClient, pump_network},
+    rendering::{core::frame_info::DrawInfo, egui::context::EguiContext},
     utils::directory_check::load_directory,
 };
 use crate::{
@@ -62,78 +54,14 @@ impl App {
         }
     }
     pub fn connect_to_server(&mut self, addr: std::net::SocketAddr) -> Result<()> {
-        self.engine.ecs_world.add_resource(NetworkClient::connect(addr)?);
+        self.engine
+            .ecs_world
+            .add_resource(NetworkClient::connect(addr)?);
         Ok(())
     }
 
     fn tick_network(&mut self, delta: Duration) -> Result<()> {
-        let messages: Vec<renet::Bytes> = {
-            let mut network = match self.engine.ecs_world.get_resource_mut::<NetworkClient>() {
-                Ok(network) => network,
-                Err(_) => return Ok(()),
-            };
-            let network = &mut *network;
-
-            network.client.update(delta);
-            network.transport.update(delta, &mut network.client)?;
-
-            let mut messages = Vec::new();
-            if network.client.is_connected() {
-                while let Some(message) = network.client.receive_message(0) {
-                    messages.push(message);
-                }
-            }
-
-            network.transport.send_packets(&mut network.client);
-            messages
-        };
-
-        for message in messages {
-            apply_snapshot(&mut self.engine.ecs_world, &message); // game-layer function
-        }
-        Ok(())
-    }
-}
-pub fn apply_snapshot(world: &mut World, message: &[u8]) {
-    let snapshot: Snapshot = match bincode::deserialize(message) {
-        Ok(snapshot) => snapshot,
-        Err(_) => return,
-    };
-
-    for entity_state in snapshot.entities {
-        let entity = find_or_spawn(world, entity_state.network_id);
-
-        for (name, bytes) in entity_state.components {
-            let Some(registration) = find_component_registration_by_name(&name) else {
-                continue;
-            };
-            let component = (registration.deserialize_raw)(&bytes);
-            world.insert_component(entity, component);
-        }
-
-        if world.get_component::<ModelRenderer>(entity).is_none()
-            && let Some(handle) = world.get_asset_handle::<GpuMesh>("meshes/cube.glb")
-        {
-            world.add_component(entity, ModelRenderer { model: handle });
-        }
-    }
-}
-
-fn find_or_spawn(world: &mut World, network_id: u64) -> Entity {
-    let existing = {
-        let query: Query<(Entity, &Networked)> = Query::new(world);
-        query
-            .iter()
-            .find(|(_, networked)| networked.id == network_id)
-            .map(|(entity, _)| entity)
-    };
-    match existing {
-        Some(entity) => entity,
-        None => {
-            let entity = world.spawn();
-            world.add_component(entity, Networked { id: network_id });
-            entity
-        }
+        pump_network(&mut self.engine.ecs_world, delta)
     }
 }
 impl ApplicationHandler for App {
