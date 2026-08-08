@@ -2,7 +2,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use engine_core::ecs::World;
-use engine_core::ecs::systems::{FixedUpdateSystem, StartSystem, UpdateSystem, run_fixed_update, run_system};
+use engine_core::ecs::systems::{FixedUpdateSystem, UpdateSystem, run_fixed_update, run_system};
 use server::context::ServerCtx;
 use server::{
     TICK_RATE_HZ, apply_player_movement, broadcast_snapshots, handle_connection_events,
@@ -10,8 +10,7 @@ use server::{
 };
 
 fn main() -> Result<()> {
-    let mut world = World::new();
-    run_system(&mut world, StartSystem::sorted())?;
+    let world = World::new();
     let (server, mut transport, addr) = setup_networking()?;
     let mut ctx = ServerCtx {
         server,

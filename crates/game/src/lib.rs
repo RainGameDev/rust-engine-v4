@@ -108,7 +108,7 @@ pub fn update_camera(
     let Some(player_pos) = players
         .iter()
         .find(|(_, n, _)| n.id == network.client_id())
-        .map(|(_, _, t)| t.global_position)
+        .map(|(_, _, t)| t.position)
     else {
         return Ok(());
     };
