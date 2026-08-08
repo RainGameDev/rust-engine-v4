@@ -278,7 +278,7 @@ impl VulkanRenderingContext {
                             &vk::PipelineRasterizationStateCreateInfo::default()
                                 .depth_clamp_enable(false)
                                 .rasterizer_discard_enable(false)
-                                .polygon_mode(vk::PolygonMode::LINE)
+                                .polygon_mode(vk::PolygonMode::FILL)
                                 .cull_mode(vk::CullModeFlags::NONE)
                                 .front_face(vk::FrontFace::CLOCKWISE)
                                 .depth_bias_enable(false)
@@ -601,7 +601,8 @@ impl VulkanRenderingContext {
         Ok((buffer, memory))
     }
 
-    pub fn create_vertex_buffer<T: VertexDefinition>(        &self,
+    pub fn create_vertex_buffer<T: VertexDefinition>(
+        &self,
         vertices: &[T],
         command_pool: vk::CommandPool,
     ) -> Result<(vk::Buffer, vk::DeviceMemory)> {

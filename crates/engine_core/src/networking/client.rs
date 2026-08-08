@@ -18,6 +18,7 @@ const PROTOCOL_ID: u64 = 7;
 pub struct NetworkClient {
     client: RenetClient,
     transport: NetcodeClientTransport,
+    client_id: u64,
 }
 
 impl NetworkClient {
@@ -36,7 +37,17 @@ impl NetworkClient {
         let transport = NetcodeClientTransport::new(current_time, authentication, socket)?;
         let client = RenetClient::new(ConnectionConfig::default());
 
-        Ok(Self { client, transport })
+        Ok(Self {
+            client,
+            transport,
+            client_id,
+        })
+    }
+
+    /// The id this client presented to the server. Matches the server's
+    /// `Networked.id` for the local player entity.
+    pub fn client_id(&self) -> u64 {
+        self.client_id
     }
 
     pub fn is_connected(&self) -> bool {

@@ -7,9 +7,11 @@ layout(location = 3) in uvec4 inJoints;
 layout(location = 4) in vec4 inWeights;
 
 layout(location = 0) out vec3 fragColor;
+layout(location = 1) out vec3 fragNormal;
 
 layout(push_constant) uniform PushConstants {
     mat4 mvp;
+    mat4 model;
 } pc;
 
 layout(set = 0, binding = 0) readonly buffer Joints {
@@ -23,5 +25,8 @@ void main() {
               + inWeights.w * joint_matrices[inJoints.w];
     vec4 skinned = skin * vec4(inPosition, 1.0);
     gl_Position = pc.mvp * skinned;
+
+    vec3 skinned_normal = mat3(skin) * inNormal;
+    fragNormal = normalize(mat3(pc.model) * skinned_normal);
     fragColor = vec3(1.0, 1.0, 1.0);
 }

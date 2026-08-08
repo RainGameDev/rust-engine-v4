@@ -30,6 +30,7 @@ pub struct DrawInfo {
 #[repr(C)]
 pub struct PushConstants {
     pub mvp: [[f32; 4]; 4],
+    pub model: [[f32; 4]; 4],
 }
 
 pub fn matrix_to_push_constant(m: &Matrix4<f32>) -> [[f32; 4]; 4] {

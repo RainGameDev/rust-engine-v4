@@ -15,6 +15,7 @@ mod tests;
 pub use inventory;
 pub use macros::{Component, Resource};
 pub use macros::{fixed_update, late_update, start, update};
+pub use nalgebra;
 
 use anyhow::Result;
 use nalgebra::Vector3;
