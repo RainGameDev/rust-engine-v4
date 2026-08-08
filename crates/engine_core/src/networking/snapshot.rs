@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -54,6 +56,8 @@ pub fn build_snapshot(world: &World) -> Snapshot {
 
 /// Applies a snapshot received from the server to the local world.
 pub fn apply_snapshot(world: &mut World, snapshot: Snapshot) {
+    let network_ids: HashSet<u64> = snapshot.entities.iter().map(|e| e.network_id).collect();
+
     for entity_state in snapshot.entities {
         let entity = find_or_spawn(world, entity_state.network_id);
 
@@ -70,6 +74,20 @@ pub fn apply_snapshot(world: &mut World, snapshot: Snapshot) {
         {
             world.add_component(entity, ModelRenderer { model: handle });
         }
+    }
+
+    // Despawn networked entities the server stopped replicating
+    // (disconnected/despawned players) so they don't linger locally.
+    let to_despawn: Vec<Entity> = {
+        let query: Query<(Entity, &Networked)> = Query::new(world);
+        query
+            .iter()
+            .filter(|(_, networked)| !network_ids.contains(&networked.id))
+            .map(|(entity, _)| entity)
+            .collect()
+    };
+    for entity in to_despawn {
+        world.despawn(entity);
     }
 }
 

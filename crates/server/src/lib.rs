@@ -50,6 +50,9 @@ pub fn handle_connection_events(ctx: &mut ServerCtx) {
         match event {
             ServerEvent::ClientConnected { client_id } => {
                 println!("client {client_id} connected");
+                if find_player(&ctx.world, client_id).is_some() {
+                    continue;
+                }
                 let player = ctx.world.spawn();
                 ctx.world.add_component(player, Networked { id: client_id });
                 ctx.world
@@ -57,9 +60,13 @@ pub fn handle_connection_events(ctx: &mut ServerCtx) {
             }
             ServerEvent::ClientDisconnected { client_id, reason } => {
                 println!("client {client_id} disconnected: {reason}");
-                ctx.directions.remove(&client_id);
                 let to_despawn: Vec<Entity> = {
                     let query: Query<(Entity, &Networked)> = Query::new(&ctx.world);
+
+                    for i in query.iter() {
+                        println!("{}", i.1.id);
+                    }
+
                     query
                         .iter()
                         .filter(|(_, networked)| networked.id == client_id)
@@ -69,6 +76,8 @@ pub fn handle_connection_events(ctx: &mut ServerCtx) {
                 for entity in to_despawn {
                     ctx.world.despawn(entity);
                 }
+
+                ctx.directions.remove(&client_id);
             }
         }
     }
@@ -111,5 +120,6 @@ pub fn broadcast_snapshots(ctx: &mut ServerCtx) {
             return;
         }
     };
-    ctx.server.broadcast_message(DefaultChannel::Unreliable, bytes);
+    ctx.server
+        .broadcast_message(DefaultChannel::Unreliable, bytes);
 }
