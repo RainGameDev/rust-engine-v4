@@ -34,7 +34,7 @@ impl VulkanSwapchain {
     pub fn new(context: Arc<VulkanRenderingContext>, window: Arc<Window>) -> Result<Self> {
         let surface = context.create_surface(&window)?;
         let format = vk::Format::B8G8R8A8_SRGB;
-        let depth_format = vk::Format::D32_SFLOAT;
+        let depth_format = vk::Format::D24_UNORM_S8_UINT;
         let extent = if surface.capabilities.current_extent.width != u32::MAX {
             surface.capabilities.current_extent
         } else {
@@ -220,7 +220,43 @@ impl VulkanSwapchain {
             }
         }
 
+        self.create_depth_image()?;
         self.is_dirty = false;
+        Ok(())
+    }
+
+    /// Creates (or recreates) the depth image to match the current swapchain extent.
+    fn create_depth_image(&mut self) -> Result<()> {
+        if self.depth.image != vk::Image::null() {
+            unsafe {
+                self.context
+                    .device
+                    .destroy_image_view(self.depth.image_view, None);
+                self.context.device.destroy_image(self.depth.image, None);
+                self.context.device.free_memory(self.depth.memory, None);
+            }
+        }
+
+        let (image, memory) = self.context.create_image(
+            self.extent,
+            self.depth.format,
+            vk::ImageTiling::OPTIMAL,
+            vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT | vk::ImageUsageFlags::TRANSFER_DST,
+            vk::MemoryPropertyFlags::DEVICE_LOCAL,
+        )?;
+        let image_view = self.context.create_image_view(
+            image,
+            self.depth.format,
+            vk::ImageAspectFlags::DEPTH,
+        )?;
+
+        self.depth = Image {
+            format: self.depth.format,
+            image,
+            image_view,
+            memory,
+        };
+
         Ok(())
     }
 }

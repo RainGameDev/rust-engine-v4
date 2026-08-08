@@ -104,9 +104,8 @@ impl VulkanRenderer {
                 .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
                 .descriptor_count(1)
                 .stage_flags(vk::ShaderStageFlags::VERTEX);
-            let joint_descriptor_set_layout = context.create_descriptor_set_layout(&[
-                joint_binding,
-            ])?;
+            let joint_descriptor_set_layout =
+                context.create_descriptor_set_layout(&[joint_binding])?;
 
             let joint_descriptor_pool = context.create_descriptor_pool(
                 &[vk::DescriptorPoolSize::default()
@@ -115,10 +114,8 @@ impl VulkanRenderer {
                 1,
             )?;
 
-            let joint_descriptor_set = context.allocate_descriptor_set(
-                joint_descriptor_pool,
-                joint_descriptor_set_layout,
-            )?;
+            let joint_descriptor_set = context
+                .allocate_descriptor_set(joint_descriptor_pool, joint_descriptor_set_layout)?;
 
             let joint_buffer_size =
                 (MAX_JOINTS * std::mem::size_of::<nalgebra::Matrix4<f32>>()) as vk::DeviceSize;
@@ -159,6 +156,7 @@ impl VulkanRenderer {
                 swapchain.extent,
                 swapchain.format,
                 pipeline_layout,
+                swapchain.depth.format,
             )?;
 
             context.device.destroy_shader_module(vertex_shader, None);
@@ -256,18 +254,44 @@ impl VulkanRenderer {
                 vk::ImageAspectFlags::COLOR,
             );
 
-            // transition image layout to be presented for rendering
+            // transition depth image to a writable transfer layout and clear it
             self.context.transition_image_layout(
                 frame.command_buffer,
-                self.swapchain.images[image_index as usize],
-                self.image_layouts.renderable,
-                self.image_layouts.present,
-                vk::ImageAspectFlags::COLOR,
+                self.swapchain.depth.image,
+                self.image_layouts.undefined,
+                self.image_layouts.transfer_dst,
+                vk::ImageAspectFlags::DEPTH,
+            );
+
+            self.context.device.cmd_clear_depth_stencil_image(
+                frame.command_buffer,
+                self.swapchain.depth.image,
+                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                &vk::ClearDepthStencilValue {
+                    depth: 1.0,
+                    stencil: 0,
+                },
+                &[vk::ImageSubresourceRange::default()
+                    .aspect_mask(vk::ImageAspectFlags::DEPTH)
+                    .base_mip_level(0)
+                    .level_count(1)
+                    .base_array_layer(0)
+                    .layer_count(1)],
+            );
+
+            // transition depth image layout for depth attachment use
+            self.context.transition_image_layout(
+                frame.command_buffer,
+                self.swapchain.depth.image,
+                self.image_layouts.transfer_dst,
+                self.image_layouts.depth,
+                vk::ImageAspectFlags::DEPTH,
             );
 
             self.context.begin_rendering(
                 frame.command_buffer,
                 self.swapchain.views[image_index as usize],
+                self.swapchain.depth.image_view,
                 ClearColorValue {
                     float32: [0.0, 0.2, 0.8, 1.0],
                 },
@@ -277,9 +301,14 @@ impl VulkanRenderer {
             self.context.device.cmd_set_viewport(
                 frame.command_buffer,
                 0,
-                &[vk::Viewport::default()
-                    .width(self.swapchain.extent.width as f32)
-                    .height(self.swapchain.extent.height as f32)],
+                &[vk::Viewport {
+                    x: 0.0,
+                    y: 0.0,
+                    width: self.swapchain.extent.width as f32,
+                    height: self.swapchain.extent.height as f32,
+                    min_depth: 0.0,
+                    max_depth: 1.0,
+                }],
             );
 
             self.context.device.cmd_set_scissor(
@@ -371,7 +400,6 @@ impl VulkanRenderer {
                 .cmd_draw(frame.command_buffer, 3, 1, 0, 0);
 
             self.context.device.cmd_end_rendering(frame.command_buffer);
-
             self.current_image_index = image_index;
         }
 
@@ -469,6 +497,14 @@ impl VulkanRenderer {
 
             self.context.device.cmd_end_rendering(frame.command_buffer);
 
+            self.context.transition_image_layout(
+                frame.command_buffer,
+                self.swapchain.images[self.current_image_index as usize],
+                self.image_layouts.renderable,
+                self.image_layouts.present,
+                vk::ImageAspectFlags::COLOR,
+            );
+
             self.context
                 .device
                 .end_command_buffer(frame.command_buffer)?;
@@ -488,8 +524,7 @@ impl VulkanRenderer {
         }
 
         // Defer these frees until next frame (see `ui_pending_texture_frees`).
-        self.ui_renderer.pending_texture_frees =
-            full_output.textures_delta.free.drain().collect();
+        self.ui_renderer.pending_texture_frees = full_output.textures_delta.free.drain().collect();
         Ok(())
     }
 

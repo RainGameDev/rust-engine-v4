@@ -20,6 +20,8 @@ pub struct ImageLayouts {
     pub undefined: ImageLayoutState,
     pub renderable: ImageLayoutState,
     pub present: ImageLayoutState,
+    pub transfer_dst: ImageLayoutState,
+    pub depth: ImageLayoutState,
 }
 
 impl Default for ImageLayouts {
@@ -43,11 +45,26 @@ impl Default for ImageLayouts {
             stage_mask: vk::PipelineStageFlags::BOTTOM_OF_PIPE,
             queue_family_index: vk::QUEUE_FAMILY_IGNORED,
         };
+        let transfer_dst = ImageLayoutState {
+            layout: vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+            access_mask: vk::AccessFlags::TRANSFER_WRITE,
+            stage_mask: vk::PipelineStageFlags::TRANSFER,
+            queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+        };
 
+        let depth = ImageLayoutState {
+            layout: vk::ImageLayout::DEPTH_ATTACHMENT_OPTIMAL,
+            access_mask: vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE,
+            stage_mask: vk::PipelineStageFlags::EARLY_FRAGMENT_TESTS
+                | vk::PipelineStageFlags::LATE_FRAGMENT_TESTS,
+            queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+        };
         Self {
             undefined,
             renderable,
             present,
+            transfer_dst,
+            depth,
         }
     }
 }

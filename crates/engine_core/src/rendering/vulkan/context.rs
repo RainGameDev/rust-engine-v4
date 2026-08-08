@@ -4,7 +4,10 @@ use anyhow::Result;
 use ash::{
     Device, Entry, Instance,
     khr::*,
-    vk::{self, Queue},
+    vk::{
+        self, AttachmentLoadOp, AttachmentStoreOp, ClearValue, CompareOp, ImageLayout, Queue,
+        RenderingAttachmentInfo,
+    },
 };
 use winit::raw_window_handle::HasWindowHandle;
 use winit::{raw_window_handle::HasDisplayHandle, window::Window};
@@ -227,6 +230,7 @@ impl VulkanRenderingContext {
         image_extent: vk::Extent2D,
         image_format: vk::Format,
         pipeline_layout: vk::PipelineLayout,
+        depth_format: vk::Format,
     ) -> Result<vk::Pipeline> {
         let entry_point = std::ffi::CString::new("main").unwrap();
 
@@ -302,11 +306,18 @@ impl VulkanRenderingContext {
                                 vk::DynamicState::SCISSOR,
                             ]),
                         )
+                        .depth_stencil_state(
+                            &vk::PipelineDepthStencilStateCreateInfo::default()
+                                .depth_test_enable(true)
+                                .depth_write_enable(true)
+                                .depth_compare_op(CompareOp::LESS),
+                        )
                         .layout(pipeline_layout)
                         .render_pass(vk::RenderPass::null())
                         .push_next(
                             &mut vk::PipelineRenderingCreateInfo::default()
-                                .color_attachment_formats(&[image_format]),
+                                .color_attachment_formats(&[image_format])
+                                .depth_attachment_format(depth_format),
                         )],
                     None,
                 )
@@ -489,6 +500,7 @@ impl VulkanRenderingContext {
         &self,
         command_buffer: vk::CommandBuffer,
         view: vk::ImageView,
+        depth_view: vk::ImageView,
         clear_color: vk::ClearColorValue,
         render_area: vk::Rect2D,
     ) {
@@ -497,12 +509,19 @@ impl VulkanRenderingContext {
                 command_buffer,
                 &vk::RenderingInfo::default()
                     .layer_count(1)
-                    .color_attachments(&[vk::RenderingAttachmentInfo::default()
+                    .color_attachments(&[RenderingAttachmentInfo::default()
                         .image_view(view)
-                        .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-                        .clear_value(vk::ClearValue { color: clear_color })
-                        .load_op(vk::AttachmentLoadOp::CLEAR)
-                        .store_op(vk::AttachmentStoreOp::STORE)])
+                        .image_layout(ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                        .clear_value(ClearValue { color: clear_color })
+                        .load_op(AttachmentLoadOp::CLEAR)
+                        .store_op(AttachmentStoreOp::STORE)])
+                    .depth_attachment(
+                        &RenderingAttachmentInfo::default()
+                            .image_view(depth_view)
+                            .image_layout(ImageLayout::DEPTH_ATTACHMENT_OPTIMAL)
+                            .load_op(AttachmentLoadOp::LOAD)
+                            .store_op(AttachmentStoreOp::STORE),
+                    )
                     .render_area(render_area),
             );
         }
