@@ -18,12 +18,9 @@ pub use macros::{fixed_update, late_update, start, update};
 
 use anyhow::Result;
 use nalgebra::Vector3;
-use winit::keyboard::{KeyCode, PhysicalKey};
 
 use crate::ecs::commands::Commands;
-use crate::ecs::components::engine_components::model_renderer::ModelRenderer;
-use crate::ecs::systems::param::{Res, ResMut};
-use crate::input::InputManager;
+use crate::ecs::systems::param::ResMut;
 use crate::rendering::egui::context::EguiContext;
 use crate::{
     assets::AssetRegistration,
@@ -88,36 +85,6 @@ pub fn test(context: ResMut<EguiContext>) -> Result<()> {
             });
         });
     });
-    Ok(())
-}
-
-#[update]
-pub fn move_cube(
-    input: Res<InputManager>,
-    query: Query<(&mut Transform, &ModelRenderer)>,
-) -> Result<()> {
-    const SPEED: f32 = 0.15;
-
-    for (transform, _) in query.iter() {
-        let mut direction = Vector3::zeros();
-        if input.key_pressed(PhysicalKey::Code(KeyCode::KeyW)) {
-            direction.z -= 1.0;
-        }
-        if input.key_pressed(PhysicalKey::Code(KeyCode::KeyS)) {
-            direction.z += 1.0;
-        }
-        if input.key_pressed(PhysicalKey::Code(KeyCode::KeyA)) {
-            direction.x -= 1.0;
-        }
-        if input.key_pressed(PhysicalKey::Code(KeyCode::KeyD)) {
-            direction.x += 1.0;
-        }
-
-        if direction != Vector3::zeros() {
-            transform.translate(direction.normalize() * SPEED);
-        }
-    }
-
     Ok(())
 }
 

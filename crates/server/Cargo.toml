@@ -9,5 +9,6 @@ renet.workspace = true
 bincode.workspace = true 
 serde.workspace = true
 anyhow.workspace = true
+nalgebra.workspace = true
 
 renet_netcode.workspace = true

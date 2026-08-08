@@ -1,6 +1,7 @@
 use macros::component;
-use serde::{Deserialize, Serialize};
+
 pub mod client;
+pub mod packet;
 pub mod snapshot;
 
 use crate::ecs::components::Component;
