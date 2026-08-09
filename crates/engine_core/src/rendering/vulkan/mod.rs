@@ -20,6 +20,7 @@ use crate::rendering::{
 };
 
 pub mod context;
+pub mod debug;
 pub mod device;
 pub mod frame;
 pub mod image;
@@ -394,10 +395,6 @@ impl VulkanRenderer {
                     0,
                 );
             }
-
-            self.context
-                .device
-                .cmd_draw(frame.command_buffer, 3, 1, 0, 0);
 
             self.context.device.cmd_end_rendering(frame.command_buffer);
             self.current_image_index = image_index;

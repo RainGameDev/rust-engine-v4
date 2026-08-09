@@ -19,10 +19,9 @@ layout(set = 0, binding = 0) readonly buffer Joints {
 };
 
 void main() {
-    mat4 skin = inWeights.x * joint_matrices[inJoints.x]
-              + inWeights.y * joint_matrices[inJoints.y]
-              + inWeights.z * joint_matrices[inJoints.z]
-              + inWeights.w * joint_matrices[inJoints.w];
+vec4 w = inWeights / max(dot(inWeights, vec4(1.0)), 1e-6);
+mat4 skin = w.x * joint_matrices[inJoints.x] + w.y * joint_matrices[inJoints.y]
+          + w.z * joint_matrices[inJoints.z] + w.w * joint_matrices[inJoints.w];
     vec4 skinned = skin * vec4(inPosition, 1.0);
     gl_Position = pc.mvp * skinned;
 
@@ -30,3 +29,5 @@ void main() {
     fragNormal = normalize(mat3(pc.model) * skinned_normal);
     fragColor = vec3(1.0, 1.0, 1.0);
 }
+
+

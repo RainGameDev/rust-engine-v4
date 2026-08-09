@@ -15,6 +15,7 @@ use winit::{raw_window_handle::HasDisplayHandle, window::Window};
 use crate::rendering::{
     core::vertex::{Vertex, VertexDefinition},
     vulkan::{
+        debug::{DebugUtils, VALIDATION_LAYER_NAME, is_validation_layer_available},
         device::PhysicalDevice,
         image::ImageLayoutState,
         queue::{QueueFamilies, QueueFamily, QueueFamilyPicker},
@@ -47,6 +48,8 @@ pub struct VulkanRenderingContext {
     pub instance: Instance,
     /// The vulkan entry point.
     pub entry: Entry,
+    /// The debug utils extension and messenger, when validation is available.
+    pub debug_utils: Option<DebugUtils>,
     /// The vulkan swapchain device.
     pub swapchain_extension: swapchain::Device,
 }
@@ -61,16 +64,32 @@ impl VulkanRenderingContext {
             let raw_window_handle = attributes.compatability_window.window_handle()?.as_raw();
 
             // create a vulkan instance
-            let instance = entry.create_instance(
-                &vk::InstanceCreateInfo::default()
-                    .application_info(
-                        &vk::ApplicationInfo::default().api_version(vk::API_VERSION_1_3),
-                    )
-                    .enabled_extension_names(ash_window::enumerate_required_extensions(
-                        raw_display_handle,
-                    )?),
-                None,
-            )?;
+            let mut extensions =
+                ash_window::enumerate_required_extensions(raw_display_handle)?.to_vec();
+            extensions.push(ash::vk::EXT_DEBUG_UTILS_NAME.as_ptr());
+
+            let validation_layer_available = is_validation_layer_available(&entry);
+
+            // must outlive `create_instance`, as the instance create info references it.
+            let mut messenger_create_info = DebugUtils::messenger_create_info();
+            let application_info =
+                &vk::ApplicationInfo::default().api_version(vk::API_VERSION_1_3);
+            let validation_layers = [VALIDATION_LAYER_NAME.as_ptr()];
+
+            let mut instance_create_info = vk::InstanceCreateInfo::default()
+                .application_info(application_info)
+                .enabled_extension_names(&extensions);
+
+            if validation_layer_available {
+                instance_create_info = instance_create_info
+                    .enabled_layer_names(&validation_layers)
+                    .push_next(&mut messenger_create_info);
+            }
+
+            let instance = entry.create_instance(&instance_create_info, None)?;
+
+            // install the debug messenger, if the validation layer is available.
+            let debug_utils = DebugUtils::new(&entry, &instance);
 
             // get the surface info
             let surface_extension = ash::khr::surface::Instance::new(&entry, &instance);
@@ -177,6 +196,7 @@ impl VulkanRenderingContext {
                 surface_extension,
                 instance,
                 entry,
+                debug_utils,
                 swapchain_extension,
             })
         }
