@@ -1,6 +1,7 @@
+use InputSource::*;
 use anyhow::Result;
 use engine_core::ecs::commands::Commands;
-use engine_core::ecs::components::engine_components::camera::GameCamera;
+use engine_core::ecs::components::engine_components::camera::{Camera, GameCamera};
 use engine_core::ecs::components::engine_components::transform::Transform;
 use engine_core::ecs::entities::Entity;
 use engine_core::ecs::query::filter::With;
@@ -8,65 +9,93 @@ use engine_core::ecs::query::query::Query;
 use engine_core::ecs::systems::param::{Res, ResMut};
 use engine_core::input::InputManager;
 use engine_core::input::action::{ActionBinding, InputSource};
-use engine_core::nalgebra::{UnitQuaternion, Vector3};
+use engine_core::nalgebra::{Matrix4, Point3, Point4, UnitQuaternion, Vector3};
 use engine_core::networking::client::NetworkClient;
-use engine_core::networking::packet::PlayerMovement;
+use engine_core::networking::packet::MoveTo;
 use engine_core::networking::{INPUT_CHANNEL, Networked};
+use engine_core::window::window_manager::{MouseMode, WindowManager};
 use engine_core::{Resource, start, update};
-use winit::keyboard::{KeyCode, PhysicalKey};
-
-const MOVE_X: &str = "move_x";
-const MOVE_Z: &str = "move_z";
+use winit::event::MouseButton;
 
 const MIN_ZOOM: f32 = 2.0;
 const MAX_ZOOM: f32 = 60.0;
 const MIN_PITCH: f32 = -1.5;
 const MAX_PITCH: f32 = 1.5;
 
-#[derive(Debug, Default, Resource)]
-pub struct LastSentDirection(pub [f32; 3]);
+/// Unprojects the cursor through the active camera and intersects the ray
+/// with the `y = 0` ground plane. Returns the world-space walk target.
+fn screen_to_ground(
+    mouse: (f32, f32),
+    view_projection: &Matrix4<f32>,
+    camera_position: Vector3<f32>,
+    window_size: (u32, u32),
+) -> Option<Vector3<f32>> {
+    let width = window_size.0.max(1) as f32;
+    let height = window_size.1.max(1) as f32;
+
+    // winit origin is top-left, NDC origin is bottom-left.
+    let ndc = Point3::new(
+        2.0 * mouse.0 / width - 1.0,
+        1.0 - 2.0 * mouse.1 / height,
+        1.0,
+    );
+
+    // Inverse view-projection maps NDC to a point on the far plane.
+    let inverse = view_projection.try_inverse()?;
+    let far = inverse * Point4::new(ndc.x, ndc.y, ndc.z, 1.0);
+    let far = far.xyz() / far.w;
+
+    let origin = camera_position;
+    let direction = (far - origin).coords.normalize();
+
+    // Intersect the ray with the plane y = 0: 0 = origin.y + t * direction.y.
+    let t = -origin.y / direction.y;
+    (t >= 0.0).then(|| origin + direction * t)
+}
 
 #[start]
 pub fn bind_input(commands: &mut Commands, mut input: ResMut<InputManager>) -> Result<()> {
-    commands.add_resource(LastSentDirection::default());
     commands.add_resource(CameraState::default());
 
-    use InputSource::Keyboard;
     input.bind_action(
-        MOVE_X,
-        ActionBinding::axis(
-            Keyboard(PhysicalKey::Code(KeyCode::KeyD)),
-            Keyboard(PhysicalKey::Code(KeyCode::KeyA)),
-        ),
-    );
-    input.bind_action(
-        MOVE_Z,
-        ActionBinding::axis(
-            Keyboard(PhysicalKey::Code(KeyCode::KeyS)),
-            Keyboard(PhysicalKey::Code(KeyCode::KeyW)),
-        ),
+        "RotateCamera",
+        ActionBinding::axis(Mouse(MouseButton::Right), Noop),
     );
 
     Ok(())
 }
 
 #[update]
-pub fn send_movement(
+pub fn click_to_move(
     input: Res<InputManager>,
     mut network: ResMut<NetworkClient>,
-    mut last_direction: ResMut<LastSentDirection>,
+    window_manager: Res<WindowManager>,
+    cameras: Query<(&Camera, &Transform), With<GameCamera>>,
 ) -> Result<()> {
-    if !network.is_connected() {
+    if !network.is_connected() || !input.mouse_button_just_pressed(MouseButton::Left) {
         return Ok(());
     }
 
-    let direction = [input.axis(MOVE_X), 0.0, input.axis(MOVE_Z)];
-    if direction == last_direction.0 {
+    let Some((camera, transform)) = cameras.iter().next() else {
         return Ok(());
-    }
+    };
 
-    network.send(INPUT_CHANNEL, &PlayerMovement { direction })?;
-    last_direction.0 = direction;
+    let window_size = window_manager.window.inner_size();
+    let Some(target) = screen_to_ground(
+        input.mouse_position(),
+        &camera.view_projection_matrix(transform),
+        transform.position,
+        (window_size.width, window_size.height),
+    ) else {
+        return Ok(());
+    };
+
+    network.send(
+        INPUT_CHANNEL,
+        &MoveTo {
+            target: [target.x, target.y, target.z],
+        },
+    )?;
     Ok(())
 }
 
@@ -97,6 +126,7 @@ impl Default for CameraState {
 pub fn update_camera(
     input: Res<InputManager>,
     network: Res<NetworkClient>,
+    mut window_manager: ResMut<WindowManager>,
     mut state: ResMut<CameraState>,
     players: Query<(Entity, &Networked, &Transform)>,
     cameras: Query<&mut Transform, With<GameCamera>>,
@@ -113,9 +143,6 @@ pub fn update_camera(
         return Ok(());
     };
 
-    let (dx, dy) = input.mouse_delta();
-    state.yaw -= dx * 0.005;
-    state.pitch = (state.pitch + dy * 0.005).clamp(MIN_PITCH, MAX_PITCH);
     state.distance = (state.distance - input.scroll_delta() * 1.0).clamp(MIN_ZOOM, MAX_ZOOM);
 
     let offset = Vector3::new(
@@ -129,5 +156,16 @@ pub fn update_camera(
         transform.rotation =
             UnitQuaternion::face_towards(&(transform.position - player_pos), &Vector3::y());
     }
+
+    if !input.pressed("RotateCamera") {
+        window_manager.change_mouse_mode(MouseMode::Noop);
+        return Ok(());
+    }
+
+    window_manager.change_mouse_mode(MouseMode::LockedInvisible);
+
+    let (dx, dy) = input.mouse_delta();
+    state.yaw -= dx * 0.005;
+    state.pitch = (state.pitch + dy * 0.005).clamp(MIN_PITCH, MAX_PITCH);
     Ok(())
 }

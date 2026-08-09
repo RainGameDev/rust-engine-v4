@@ -6,7 +6,7 @@ use renet_netcode::{NetcodeServerTransport, ServerAuthentication, ServerConfig};
 
 use crate::networking::{
     INPUT_CHANNEL, Networked, SNAPSHOT_CHANNEL, client::NetworkClient,
-    packet::{Packet, PlayerMovement, ServerMessage}, snapshot::{EntitySnapshot, Snapshot},
+    packet::{MoveTo, Packet, ServerMessage}, snapshot::{EntitySnapshot, Snapshot},
 };
 
 const PROTOCOL_ID: u64 = 7;
@@ -67,9 +67,9 @@ fn movement_round_trip() {
     }
     assert!(connected, "client never connected to the server");
 
-    // 2. Client -> server: PlayerMovement on the input channel.
+    // 2. Client -> server: MoveTo on the input channel.
     client
-        .send(INPUT_CHANNEL, &PlayerMovement { direction: [1.0, 0.0, 0.0] })
+        .send(INPUT_CHANNEL, &MoveTo { target: [1.0, 0.0, 0.0] })
         .unwrap();
 
     let deadline = Instant::now() + Duration::from_secs(5);
@@ -80,9 +80,9 @@ fn movement_round_trip() {
             while let Some(frame) =
                 server.receive_message(client_id, renet::DefaultChannel::ReliableOrdered)
             {
-                assert_eq!(u32::from_le_bytes(frame[..4].try_into().unwrap()), PlayerMovement::ID);
-                let client_message: PlayerMovement = bincode::deserialize(&frame[4..]).unwrap();
-                assert_eq!(client_message.direction, [1.0, 0.0, 0.0]);
+                assert_eq!(u32::from_le_bytes(frame[..4].try_into().unwrap()), MoveTo::ID);
+                let client_message: MoveTo = bincode::deserialize(&frame[4..]).unwrap();
+                assert_eq!(client_message.target, [1.0, 0.0, 0.0]);
                 received = true;
             }
         }
@@ -91,7 +91,7 @@ fn movement_round_trip() {
         }
         std::thread::sleep(Duration::from_millis(10));
     }
-    assert!(received, "server never received the PlayerMovement");
+    assert!(received, "server never received the MoveTo");
 
     // 3. Server -> client: Snapshot on the snapshot channel.
     let snapshot = Snapshot {

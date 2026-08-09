@@ -15,7 +15,7 @@ fn main() -> Result<()> {
     let mut ctx = ServerCtx {
         server,
         world,
-        directions: server::PlayerDirections::new(),
+        targets: server::PlayerTargets::new(),
     };
     println!("Dedicated server listening on {addr}");
 

@@ -5,13 +5,13 @@ pub trait Packet: serde::Serialize + serde::de::DeserializeOwned + 'static {
     const ID: u32;
 }
 
-/// Movement of a player in a vector 3.
+/// A world-space point the player should walk toward.
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
-pub struct PlayerMovement {
-    pub direction: [f32; 3],
+pub struct MoveTo {
+    pub target: [f32; 3],
 }
 
-impl Packet for PlayerMovement {
+impl Packet for MoveTo {
     const ID: u32 = 1;
 }
 

@@ -1,7 +1,7 @@
 use anyhow::Result;
 use engine_core::log_warn;
 use engine_core::networking::INPUT_CHANNEL;
-use engine_core::networking::packet::{Packet, PlayerMovement};
+use engine_core::networking::packet::{MoveTo, Packet};
 
 use crate::context::ServerCtx;
 
@@ -10,11 +10,11 @@ pub trait Incoming: Packet {
     fn handle(self, ctx: &mut ServerCtx, client_id: u64);
 }
 
-impl Incoming for PlayerMovement {
+impl Incoming for MoveTo {
     fn handle(self, ctx: &mut ServerCtx, client_id: u64) {
-        ctx.directions.insert(
+        ctx.targets.insert(
             client_id,
-            nalgebra::Vector3::new(self.direction[0], self.direction[1], self.direction[2]),
+            Some(nalgebra::Vector3::new(self.target[0], self.target[1], self.target[2])),
         );
     }
 }
@@ -29,7 +29,7 @@ fn dispatch<M: Incoming>(ctx: &mut ServerCtx, client_id: u64, payload: &[u8]) ->
 
 /// One entry per packet type.
 /// Add a new packet by implementing `Incoming` for it and registering it here; nothing else changes.
-const HANDLERS: &[(u32, Handler)] = &[(PlayerMovement::ID, dispatch::<PlayerMovement>)];
+const HANDLERS: &[(u32, Handler)] = &[(MoveTo::ID, dispatch::<MoveTo>)];
 
 pub fn handle_incoming_messages(ctx: &mut ServerCtx) -> Result<()> {
     for client_id in ctx.server.clients_id() {

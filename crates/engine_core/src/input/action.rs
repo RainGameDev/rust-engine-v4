@@ -5,6 +5,7 @@ use winit::{event::MouseButton, keyboard::PhysicalKey};
 /// Can be serialized so keybinds can be saved to disk and loaded back.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum InputSource {
+    Noop,
     /// Physical key (layout independent, what games should use).
     Keyboard(PhysicalKey),
     /// A mouse button.

@@ -522,6 +522,8 @@ impl InputManager {
             InputSource::MouseWheelUp => self.scroll_delta > 0.0,
             InputSource::MouseWheelDown => self.scroll_delta < 0.0,
             InputSource::Touch => self.touch_just_started,
+
+            _ => false,
         }
     }
 
@@ -534,6 +536,7 @@ impl InputManager {
             }
             InputSource::GamepadAxis(axis) => self.gamepad_axis_just_released.contains(axis),
             InputSource::MouseWheelUp | InputSource::MouseWheelDown | InputSource::Touch => false,
+            _ => false,
         }
     }
 
@@ -582,6 +585,7 @@ impl InputManager {
                     1.0
                 }
             }
+            _ => 0.0,
         }
     }
 

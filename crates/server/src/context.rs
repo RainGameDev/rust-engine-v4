@@ -1,11 +1,12 @@
 use engine_core::ecs::World;
 use renet::RenetServer;
 
-use crate::PlayerDirections;
+use crate::PlayerTargets;
 
 /// Everything a packet handler may touch while serving a tick.
 pub struct ServerCtx {
     pub server: RenetServer,
     pub world: World,
-    pub directions: PlayerDirections,
+    /// Last walk target requested by each client (`None` once arrived).
+    pub targets: PlayerTargets,
 }

@@ -22,9 +22,11 @@ use crate::context::ServerCtx;
 pub const TICK_RATE_HZ: f64 = 60.0;
 const PROTOCOL_ID: u64 = 7;
 const MOVE_SPEED: f32 = 30.0;
+/// Distance at which a player is considered to have reached their target.
+const ARRIVE_RADIUS: f32 = 0.1;
 
-/// Latest known direction per connected client.
-pub type PlayerDirections = HashMap<u64, Vector3<f32>>;
+/// Last walk target requested by each connected client.
+pub type PlayerTargets = HashMap<u64, Option<Vector3<f32>>>;
 
 pub fn setup_networking() -> Result<(RenetServer, NetcodeServerTransport, std::net::SocketAddr)> {
     let public_addr = "0.0.0.0:5000".parse()?;
@@ -77,7 +79,7 @@ pub fn handle_connection_events(ctx: &mut ServerCtx) {
                     ctx.world.despawn(entity);
                 }
 
-                ctx.directions.remove(&client_id);
+                ctx.targets.remove(&client_id);
             }
         }
     }
@@ -92,22 +94,36 @@ pub fn find_player(world: &World, client_id: u64) -> Option<Entity> {
 }
 
 pub fn apply_player_movement(ctx: &mut ServerCtx) {
-    for (client_id, direction) in &ctx.directions {
-        if *direction == Vector3::zeros() {
-            continue;
-        }
-        let direction = if direction.norm_squared() > 1.0 {
-            direction.normalize()
-        } else {
-            *direction
-        };
+    let speed = MOVE_SPEED / TICK_RATE_HZ as f32;
+    let mut arrived = Vec::new();
 
+    for (client_id, target) in &ctx.targets {
+        let Some(target) = target else {
+            continue;
+        };
         let Some(player) = find_player(&ctx.world, *client_id) else {
             continue;
         };
-        if let Some(transform) = ctx.world.get_component_mut::<Transform>(player) {
-            transform.position += direction * MOVE_SPEED / TICK_RATE_HZ as f32;
+        let Some(transform) = ctx.world.get_component_mut::<Transform>(player) else {
+            continue;
+        };
+
+        let to_target = target - transform.position;
+        if to_target.norm_squared() < ARRIVE_RADIUS * ARRIVE_RADIUS {
+            arrived.push(*client_id);
+            continue;
         }
+
+        let step = to_target.normalize() * speed;
+        transform.position += if step.norm_squared() >= to_target.norm_squared() {
+            to_target
+        } else {
+            step
+        };
+    }
+
+    for client_id in arrived {
+        ctx.targets.insert(client_id, None);
     }
 }
 

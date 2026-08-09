@@ -1,3 +1,5 @@
+pub mod window_manager;
+
 use std::{
     path::Path,
     time::{Duration, Instant},
@@ -23,6 +25,7 @@ use crate::{
     networking::client::{NetworkClient, pump_network},
     rendering::{core::frame_info::DrawInfo, egui::context::EguiContext},
     utils::directory_check::load_directory,
+    window::window_manager::{MouseMode, WindowManager},
 };
 use crate::{
     assets::models::{animation::SkinnedMesh, gltf::load_gltf_file},
@@ -105,6 +108,13 @@ impl ApplicationHandler for App {
 
         let context = EguiContext(self.renderer.as_ref().unwrap().get_egui_context());
         self.engine.ecs_world.add_resource(context);
+
+        let window = self.rendering_info.as_ref().unwrap().window.clone();
+        let window_manager = WindowManager {
+            window,
+            mouse_mode: MouseMode::default(),
+        };
+        self.engine.ecs_world.add_resource(window_manager);
 
         if let Some(addr) = self.auto_connect_addr {
             match self.connect_to_server(addr) {
