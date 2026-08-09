@@ -34,7 +34,15 @@ impl VulkanSwapchain {
     pub fn new(context: Arc<VulkanRenderingContext>, window: Arc<Window>) -> Result<Self> {
         let surface = context.create_surface(&window)?;
         let format = vk::Format::B8G8R8A8_SRGB;
-        let depth_format = vk::Format::D24_UNORM_S8_UINT;
+        let depth_format = context.find_supported_format(
+            &[
+                vk::Format::D32_SFLOAT,
+                vk::Format::D32_SFLOAT_S8_UINT,
+                vk::Format::D24_UNORM_S8_UINT,
+            ],
+            vk::ImageTiling::OPTIMAL,
+            vk::FormatFeatureFlags::DEPTH_STENCIL_ATTACHMENT,
+        )?;
         let extent = if surface.capabilities.current_extent.width != u32::MAX {
             surface.capabilities.current_extent
         } else {
@@ -247,7 +255,7 @@ impl VulkanSwapchain {
         let image_view = self.context.create_image_view(
             image,
             self.depth.format,
-            vk::ImageAspectFlags::DEPTH,
+            crate::rendering::vulkan::context::depth_image_aspect(self.depth.format),
         )?;
 
         self.depth = Image {

@@ -47,8 +47,6 @@ unsafe extern "system" fn debug_callback(
         crate::log_error!("[Vulkan Validation] {}", message);
     } else if message_severity.contains(vk::DebugUtilsMessageSeverityFlagsEXT::WARNING) {
         crate::log_warn!("[Vulkan Validation] {}", message);
-    } else {
-        crate::log_debug!("[Vulkan Validation] {}", message);
     }
 
     vk::FALSE

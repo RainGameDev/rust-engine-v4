@@ -72,8 +72,7 @@ impl VulkanRenderingContext {
 
             // must outlive `create_instance`, as the instance create info references it.
             let mut messenger_create_info = DebugUtils::messenger_create_info();
-            let application_info =
-                &vk::ApplicationInfo::default().api_version(vk::API_VERSION_1_3);
+            let application_info = &vk::ApplicationInfo::default().api_version(vk::API_VERSION_1_3);
             let validation_layers = [VALIDATION_LAYER_NAME.as_ptr()];
 
             let mut instance_create_info = vk::InstanceCreateInfo::default()
@@ -577,6 +576,37 @@ impl VulkanRenderingContext {
         ))
     }
 
+    /// Finds the first candidate format that supports the given features for
+    /// the given tiling on the current physical device.
+    pub fn find_supported_format(
+        &self,
+        candidates: &[vk::Format],
+        tiling: vk::ImageTiling,
+        features: vk::FormatFeatureFlags,
+    ) -> Result<vk::Format> {
+        candidates
+            .iter()
+            .copied()
+            .find(|&format| {
+                let props = unsafe {
+                    self.instance
+                        .get_physical_device_format_properties(self.physical_device.handle, format)
+                };
+                let supported = match tiling {
+                    vk::ImageTiling::LINEAR => props.linear_tiling_features,
+                    vk::ImageTiling::OPTIMAL => props.optimal_tiling_features,
+                    _ => props.linear_tiling_features | props.optimal_tiling_features,
+                };
+                supported.contains(features)
+            })
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Failed to find a format supporting the required features for tiling {:?}",
+                    tiling
+                )
+            })
+    }
+
     pub fn begin_single_time_commands(&self, command_pool: vk::CommandPool) -> vk::CommandBuffer {
         let alloc_info = vk::CommandBufferAllocateInfo::default()
             .level(vk::CommandBufferLevel::PRIMARY)
@@ -763,5 +793,18 @@ impl VulkanRenderingContext {
         }
 
         Ok((buffer, buffer_memory))
+    }
+}
+
+pub fn depth_image_aspect(format: vk::Format) -> vk::ImageAspectFlags {
+    if matches!(
+        format,
+        vk::Format::D32_SFLOAT_S8_UINT
+            | vk::Format::D24_UNORM_S8_UINT
+            | vk::Format::D16_UNORM_S8_UINT
+    ) {
+        vk::ImageAspectFlags::DEPTH | vk::ImageAspectFlags::STENCIL
+    } else {
+        vk::ImageAspectFlags::DEPTH
     }
 }

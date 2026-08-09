@@ -1,23 +1,22 @@
-use anyhow::Result;
-use ash::vk::{
-    self, ClearColorValue, CommandBufferResetFlags, CommandPool, Pipeline, PipelineLayout,
-    PipelineLayoutCreateInfo,
-};
-use egui::{Context, TextureId, epaint::ImageDelta};
-use std::{fs, sync::Arc};
-use winit::{event::WindowEvent, event_loop::ActiveEventLoop, window::Window};
-
 use crate::rendering::{
     core::frame_info::{FrameInfo, PushConstants, matrix_to_push_constant},
     egui::renderer::UIRenderer,
     vulkan::{
-        context::{RenderingContextAttributes, VulkanRenderingContext},
+        context::{RenderingContextAttributes, VulkanRenderingContext, depth_image_aspect},
         frame::VulkanFrame,
         image::ImageLayouts,
         queue::queue_family_picker,
         swapchain::VulkanSwapchain,
     },
 };
+use anyhow::Result;
+use ash::vk::{
+    self, ClearColorValue, CommandBufferResetFlags, CommandPool, Pipeline, PipelineLayout,
+    PipelineLayoutCreateInfo, Semaphore,
+};
+use egui::{Context, TextureId, epaint::ImageDelta};
+use std::{fs, sync::Arc};
+use winit::{event::WindowEvent, event_loop::ActiveEventLoop, window::Window};
 
 pub mod context;
 pub mod debug;
@@ -50,6 +49,7 @@ impl RenderingInfo {
     }
 }
 
+#[allow(unused)]
 pub struct VulkanRenderer {
     pub in_flight_frames_count: usize,
     pub swapchain: VulkanSwapchain,
@@ -65,6 +65,7 @@ pub struct VulkanRenderer {
     joint_descriptor_set_layout: vk::DescriptorSetLayout,
     joint_descriptor_pool: vk::DescriptorPool,
     joint_descriptor_set: vk::DescriptorSet,
+    present_semaphores: Vec<Semaphore>,
     context: Arc<VulkanRenderingContext>,
     current_image_index: u32,
 }
@@ -184,9 +185,6 @@ impl VulkanRenderer {
                 let image_available_semaphore = context
                     .device
                     .create_semaphore(&vk::SemaphoreCreateInfo::default(), None)?;
-                let render_finished_semaphore = context
-                    .device
-                    .create_semaphore(&vk::SemaphoreCreateInfo::default(), None)?;
                 let in_flight_fence = context.device.create_fence(
                     &vk::FenceCreateInfo::default().flags(vk::FenceCreateFlags::SIGNALED),
                     None,
@@ -195,7 +193,6 @@ impl VulkanRenderer {
                 frames.push(VulkanFrame {
                     command_buffer,
                     image_available_semaphore,
-                    render_finished_semaphore,
                     in_flight_fence,
                 });
             }
@@ -214,6 +211,7 @@ impl VulkanRenderer {
                 joint_descriptor_set_layout,
                 joint_descriptor_pool,
                 joint_descriptor_set,
+                present_semaphores: Vec::new(),
                 context: Arc::new(rendering_info.context.clone()),
                 swapchain,
                 ui_renderer,
@@ -232,6 +230,8 @@ impl VulkanRenderer {
             self.context
                 .device
                 .wait_for_fences(&[frame.in_flight_fence], true, u64::MAX)?;
+
+            self.context.device.reset_fences(&[frame.in_flight_fence])?;
 
             self.context
                 .device
@@ -261,7 +261,7 @@ impl VulkanRenderer {
                 self.swapchain.depth.image,
                 self.image_layouts.undefined,
                 self.image_layouts.transfer_dst,
-                vk::ImageAspectFlags::DEPTH,
+                depth_image_aspect(self.swapchain.depth.format),
             );
 
             self.context.device.cmd_clear_depth_stencil_image(
@@ -273,7 +273,7 @@ impl VulkanRenderer {
                     stencil: 0,
                 },
                 &[vk::ImageSubresourceRange::default()
-                    .aspect_mask(vk::ImageAspectFlags::DEPTH)
+                    .aspect_mask(depth_image_aspect(self.swapchain.depth.format))
                     .base_mip_level(0)
                     .level_count(1)
                     .base_array_layer(0)
@@ -286,7 +286,7 @@ impl VulkanRenderer {
                 self.swapchain.depth.image,
                 self.image_layouts.transfer_dst,
                 self.image_layouts.depth,
-                vk::ImageAspectFlags::DEPTH,
+                depth_image_aspect(self.swapchain.depth.format),
             );
 
             self.context.begin_rendering(
@@ -407,7 +407,27 @@ impl VulkanRenderer {
     pub fn recreate_swapchain(&mut self) {}
 
     pub fn resize(&mut self) -> anyhow::Result<()> {
-        self.swapchain.resize()
+        self.swapchain.resize()?;
+        self.recreate_present_semaphores()?;
+        Ok(())
+    }
+
+    /// (Re)creates one present semaphore per swapchain image.
+    /// The old semaphores are safe to destroy
+    fn recreate_present_semaphores(&mut self) -> anyhow::Result<()> {
+        unsafe {
+            for semaphore in self.present_semaphores.drain(..) {
+                self.context.device.destroy_semaphore(semaphore, None);
+            }
+            for _ in 0..self.swapchain.images.len() {
+                self.present_semaphores.push(
+                    self.context
+                        .device
+                        .create_semaphore(&vk::SemaphoreCreateInfo::default(), None)?,
+                );
+            }
+        }
+        Ok(())
     }
 
     // --- UI ---
@@ -419,6 +439,10 @@ impl VulkanRenderer {
     }
 
     pub fn end_ui(&mut self) -> Result<()> {
+        if self.present_semaphores.len() != self.swapchain.images.len() {
+            self.recreate_present_semaphores()?;
+        }
+
         let frame = &self.frames[self.current_frame];
         let mut full_output = self.ui_renderer.context.end_pass();
         let mut state = self.ui_renderer.state.lock().unwrap();
@@ -506,18 +530,20 @@ impl VulkanRenderer {
                 .device
                 .end_command_buffer(frame.command_buffer)?;
 
+            let present_semaphore = self.present_semaphores[self.current_image_index as usize];
+
             self.context.device.queue_submit(
                 self.context.queues[self.context.queue_families.graphics as usize],
                 &[ash::vk::SubmitInfo::default()
                     .wait_semaphores(&[frame.image_available_semaphore])
                     .wait_dst_stage_mask(&[vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT])
                     .command_buffers(&[frame.command_buffer])
-                    .signal_semaphores(&[frame.render_finished_semaphore])],
+                    .signal_semaphores(&[present_semaphore])],
                 frame.in_flight_fence,
             )?;
 
             self.swapchain
-                .present_image(self.current_image_index, frame.render_finished_semaphore)?;
+                .present_image(self.current_image_index, present_semaphore)?;
         }
 
         // Defer these frees until next frame (see `ui_pending_texture_frees`).
@@ -534,5 +560,13 @@ impl VulkanRenderer {
 
     pub fn get_egui_context(&self) -> Context {
         self.ui_renderer.context.clone()
+    }
+}
+
+impl Drop for VulkanRenderer {
+    fn drop(&mut self) {
+        unsafe {
+            let _ = self.context.device.device_wait_idle();
+        }
     }
 }
