@@ -2,17 +2,19 @@ use InputSource::*;
 use anyhow::Result;
 use engine_core::ecs::commands::Commands;
 use engine_core::ecs::components::engine_components::camera::{Camera, GameCamera};
+use engine_core::ecs::components::engine_components::model_renderer::ModelRenderer;
 use engine_core::ecs::components::engine_components::transform::Transform;
 use engine_core::ecs::entities::Entity;
 use engine_core::ecs::query::filter::With;
 use engine_core::ecs::query::query::Query;
-use engine_core::ecs::systems::param::{Res, ResMut};
+use engine_core::ecs::systems::param::{Assets, Res, ResMut};
 use engine_core::input::InputManager;
 use engine_core::input::action::{ActionBinding, InputSource};
 use engine_core::nalgebra::{Matrix4, Point3, Point4, UnitQuaternion, Vector3};
 use engine_core::networking::client::NetworkClient;
 use engine_core::networking::packet::MoveTo;
 use engine_core::networking::{INPUT_CHANNEL, Networked};
+use engine_core::rendering::core::model::GpuMesh;
 use engine_core::window::window_manager::{MouseMode, WindowManager};
 use engine_core::{Resource, start, update};
 use winit::event::MouseButton;
@@ -22,8 +24,13 @@ const MAX_ZOOM: f32 = 60.0;
 const MIN_PITCH: f32 = -1.5;
 const MAX_PITCH: f32 = 1.5;
 
-/// Unprojects the cursor through the active camera and intersects the ray
-/// with the `y = 0` ground plane. Returns the world-space walk target.
+/// The mesh used for the ground platform
+const FLOOR_MESH_PATH: &str = "meshes/cube.glb";
+
+/// Set once the ground platform has been spawned.
+#[derive(Debug, Default, Resource)]
+pub struct FloorSpawned(pub bool);
+
 fn screen_to_ground(
     mouse: (f32, f32),
     view_projection: &Matrix4<f32>,
@@ -56,12 +63,39 @@ fn screen_to_ground(
 #[start]
 pub fn bind_input(commands: &mut Commands, mut input: ResMut<InputManager>) -> Result<()> {
     commands.add_resource(CameraState::default());
+    commands.add_resource(FloorSpawned::default());
 
     input.bind_action(
         "RotateCamera",
         ActionBinding::axis(Mouse(MouseButton::Right), Noop),
     );
 
+    Ok(())
+}
+
+#[update]
+pub fn spawn_floor(
+    commands: &mut Commands,
+    mut spawned: ResMut<FloorSpawned>,
+    meshes: Assets<GpuMesh>,
+) -> Result<()> {
+    if spawned.0 {
+        return Ok(());
+    }
+
+    let Some(handle) = meshes.get_handle(FLOOR_MESH_PATH) else {
+        return Ok(());
+    };
+
+    spawned.0 = true;
+
+    let floor = commands.spawn();
+    commands.add_component(
+        floor,
+        Transform::from_position(Vector3::new(0.0, -0.05, 0.0))
+            .with_scale(Vector3::new(10.0, 0.1, 10.0)),
+    );
+    commands.add_component(floor, ModelRenderer { model: handle });
     Ok(())
 }
 
@@ -168,4 +202,32 @@ pub fn update_camera(
     state.yaw -= dx * 0.005;
     state.pitch = (state.pitch + dy * 0.005).clamp(MIN_PITCH, MAX_PITCH);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn screen_to_ground_hits_look_at_point() {
+        let camera_pos = Vector3::new(5.0, 5.0, 5.0);
+        // Matches update_camera: face_towards(camera - player) makes the
+        // camera's forward (-Z) point at the target.
+        let rotation =
+            UnitQuaternion::face_towards(&(camera_pos - Vector3::zeros()), &Vector3::y());
+        let mut transform = Transform::from_position(camera_pos).with_rotation(rotation);
+        transform.global_position = transform.position;
+        transform.global_rotation = transform.rotation;
+        transform.global_scale = transform.scale;
+
+        let camera = Camera::perspective(60.0, 16.0 / 9.0, 0.1, 1000.0);
+        let vp = camera.view_projection_matrix(&transform);
+
+        // The look-at point projects to the screen center.
+        let size = (1920u32, 1080u32);
+        let screen = (size.0 as f32 / 2.0, size.1 as f32 / 2.0);
+
+        let hit = screen_to_ground(screen, &vp, camera_pos, size).unwrap();
+        assert!(hit.x.abs() < 0.01 && hit.y.abs() < 0.01 && hit.z.abs() < 0.01);
+    }
 }

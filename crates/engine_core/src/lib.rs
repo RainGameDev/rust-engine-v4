@@ -4,6 +4,7 @@ pub mod ffi;
 pub mod input;
 pub mod logging;
 pub mod networking;
+pub mod physics;
 pub mod rendering;
 pub mod time;
 pub mod utils;

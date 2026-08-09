@@ -76,6 +76,11 @@ impl<'w, T: Asset> Assets<'w, T> {
     pub fn get(&self, handle: Handle<T>) -> Option<&T> {
         self.world.get_asset(handle)
     }
+
+    /// Looks up the handle for an asset registered under `path`.
+    pub fn get_handle(&self, path: &str) -> Option<Handle<T>> {
+        self.world.get_asset_handle::<T>(path)
+    }
 }
 
 impl<'w, T: Asset> SystemParam<'w> for Assets<'w, T> {
