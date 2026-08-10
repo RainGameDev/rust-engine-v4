@@ -25,6 +25,9 @@ enum Command {
     AddResource {
         insert: Box<dyn FnOnce(&mut World) + Send>,
     },
+    RemoveResource {
+        insert: Box<dyn FnOnce(&mut World) + Send>,
+    },
     SetParent {
         child: Entity,
         parent: Option<Entity>,
@@ -78,6 +81,12 @@ impl Commands {
         });
     }
 
+    pub fn remove_resource<T: Resource>(&mut self) {
+        self.queue.push(Command::RemoveResource {
+            insert: Box::new(move |world| world.remove_resource::<T>()),
+        });
+    }
+
     pub fn set_parent(&mut self, child: Entity, parent: Option<Entity>) {
         self.queue.push(Command::SetParent { child, parent });
     }
@@ -100,6 +109,7 @@ impl Commands {
                     world.despawn(entity);
                 }
                 Command::AddResource { insert } => insert(world),
+                Command::RemoveResource { insert } => insert(world),
                 Command::SetParent { child, parent } => world.set_parent(child, parent),
             }
         }

@@ -2,6 +2,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use engine_core::ecs::World;
+use engine_core::ecs::components::engine_components::transform::transform_update;
 use engine_core::ecs::systems::{FixedUpdateSystem, UpdateSystem, run_fixed_update, run_system};
 use server::context::ServerCtx;
 use server::{
@@ -15,6 +16,7 @@ fn main() -> Result<()> {
     let mut ctx = ServerCtx {
         server,
         world,
+        map: engine_core::tiles::TileMap::load_default()?,
         targets: server::PlayerTargets::new(),
     };
     println!("Dedicated server listening on {addr}");
@@ -42,6 +44,9 @@ fn main() -> Result<()> {
                 tick_duration.as_secs_f32(),
             )?;
             run_system(&mut ctx.world, UpdateSystem::sorted())?;
+
+            // Keep global transforms in sync with movement before snapshotting.
+            transform_update(&mut ctx.world);
 
             broadcast_snapshots(&mut ctx);
 

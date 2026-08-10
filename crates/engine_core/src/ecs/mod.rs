@@ -22,6 +22,7 @@ use crate::ecs::components::engine_components::hierarchy::{Children, Parent};
 use crate::ecs::components::{BoxedComponent, Component};
 use crate::ecs::entities::Entity;
 use crate::ecs::resources::{Resource, ResourceMap};
+use crate::networking::Networked;
 
 /// Where a given entity currently lives, which archetype, and which row within it.
 #[derive(Clone, Copy)]
@@ -97,6 +98,18 @@ impl World {
                 self.remove_component::<Parent>(child);
             }
         }
+    }
+
+    pub fn get_parent(&self, entity: Entity) -> Option<Entity> {
+        self.get_component::<Parent>(entity)
+            .map(|Parent(parent)| *parent)
+    }
+    pub fn get_parent_id(&self, entity: Entity) -> Option<Entity> {
+        self.get_parent(entity)
+    }
+    pub fn get_parent_network_id(world: &World, entity: Entity) -> Option<u64> {
+        let parent = world.get_parent(entity)?;
+        world.get_component::<Networked>(parent).map(|n| n.id)
     }
 
     // --- Entities ---

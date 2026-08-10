@@ -31,6 +31,6 @@ winit = { version = "0.30.5", features = ["serde"] }
 renet = "1.2.0"
 renet_netcode = "1"
 bincode = "1"
-serde = { version = "1", features = ["derive"] }
+serde = { version = "1", features = ["derive", "rc"] }
 gilrs = "0.11.2"
 

@@ -31,8 +31,10 @@ use crate::{
     assets::models::{animation::SkinnedMesh, gltf::load_gltf_file},
     rendering::{
         core::frame_info::update_camera_aspect_ratio,
+        core::model::raw_mesh_to_gpu_mesh,
         vulkan::{RenderingInfo, VulkanRenderer},
     },
+    tiles::TileMap,
 };
 
 /// App that runs the window, and engine
@@ -108,6 +110,30 @@ impl ApplicationHandler for App {
 
         let context = EguiContext(self.renderer.as_ref().unwrap().get_egui_context());
         self.engine.ecs_world.add_resource(context);
+
+        // Build the terrain mesh from the bundled default map and spawn it.
+        match TileMap::load_default() {
+            Ok(tile_map) => {
+                let renderer = self.renderer.as_ref().unwrap();
+                let context = &self.rendering_info.as_ref().unwrap().context;
+                let terrain_mesh =
+                    raw_mesh_to_gpu_mesh(tile_map.build_mesh(), renderer, context).unwrap();
+                let handle = self
+                    .engine
+                    .ecs_world
+                    .add_asset(terrain_mesh, "meshes/terrain".to_string());
+                let entity = self.engine.ecs_world.spawn();
+                self.engine
+                    .ecs_world
+                    .add_component(entity, Transform::default());
+                self.engine
+                    .ecs_world
+                    .add_component(entity, ModelRenderer { model: handle });
+                self.engine.ecs_world.add_component(entity, tile_map.build_collider());
+                crate::log_info!("spawned terrain: {} tiles", tile_map.width * tile_map.depth);
+            }
+            Err(err) => crate::log_error!(reason: "failed to load terrain", "{err:?}"),
+        }
 
         let window = self.rendering_info.as_ref().unwrap().window.clone();
         let window_manager = WindowManager {

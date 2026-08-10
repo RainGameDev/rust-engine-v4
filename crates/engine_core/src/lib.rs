@@ -6,6 +6,7 @@ pub mod logging;
 pub mod networking;
 pub mod physics;
 pub mod rendering;
+pub mod tiles;
 pub mod time;
 pub mod utils;
 pub mod window;
@@ -13,6 +14,7 @@ pub mod window;
 #[cfg(test)]
 mod tests;
 
+pub use egui;
 pub use inventory;
 pub use macros::{Component, Resource};
 pub use macros::{fixed_update, late_update, start, update};

@@ -11,3 +11,4 @@ crate-type = ["cdylib", "rlib"]
 engine_core = { path = "../engine_core" }
 anyhow.workspace = true
 winit.workspace = true
+egui.workspace = true

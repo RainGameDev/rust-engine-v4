@@ -24,6 +24,10 @@ void main() {
     + w.z * joint_matrices[inJoints.z] + w.w * joint_matrices[inJoints.w];
   vec4 skinned = skin * vec4(inPosition, 1.0);
   gl_Position = pc.mvp * skinned;
+  // Vulkan's NDC y-axis points down, but the camera matrix is written for
+  // OpenGL (nalgebra, y-up). Flip so the image renders upright; the CPU-side
+  // projection used for picking keeps its OpenGL convention.
+  gl_Position.y = -gl_Position.y;
 
   vec3 skinned_normal = mat3(skin) * inNormal;
   fragNormal = normalize(mat3(pc.model) * skinned_normal);

@@ -6,13 +6,15 @@ use std::net::UdpSocket;
 use std::time::SystemTime;
 
 use anyhow::Result;
-use engine_core::ecs::World;
 use engine_core::ecs::components::engine_components::transform::Transform;
 use engine_core::ecs::entities::Entity;
 use engine_core::ecs::query::query::Query;
+use engine_core::log_debug;
 use engine_core::networking::Networked;
 use engine_core::networking::packet::ServerMessage;
 use engine_core::networking::snapshot::build_snapshot;
+use engine_core::physics::collider::ColliderShape;
+use engine_core::{ecs::World, physics::collider::Collider};
 use nalgebra::Vector3;
 use renet::{ConnectionConfig, DefaultChannel, RenetServer, ServerEvent};
 use renet_netcode::{NetcodeServerTransport, ServerAuthentication, ServerConfig};
@@ -25,8 +27,10 @@ const MOVE_SPEED: f32 = 30.0;
 /// Distance at which a player is considered to have reached their target.
 const ARRIVE_RADIUS: f32 = 0.1;
 
-/// Last walk target requested by each connected client.
-pub type PlayerTargets = HashMap<u64, Option<Vector3<f32>>>;
+/// A single waypoint along a player's walk path.
+pub type PlayerPath = Vec<Vector3<f32>>;
+/// Last walk path requested by each connected client (`None` once arrived).
+pub type PlayerTargets = HashMap<u64, Option<PlayerPath>>;
 
 pub fn setup_networking() -> Result<(RenetServer, NetcodeServerTransport, std::net::SocketAddr)> {
     let public_addr = "0.0.0.0:5000".parse()?;
@@ -57,8 +61,24 @@ pub fn handle_connection_events(ctx: &mut ServerCtx) {
                 }
                 let player = ctx.world.spawn();
                 ctx.world.add_component(player, Networked { id: client_id });
-                ctx.world
-                    .add_component(player, Transform::from_position(Vector3::zeros()));
+                let spawn = ctx
+                    .map
+                    .first_walkable()
+                    .and_then(|(x, z)| ctx.map.tile_center(x, z))
+                    .unwrap_or(Vector3::zeros());
+
+                let mut transform = Transform::from_position(spawn);
+                transform.position.y += 0.5;
+                transform.scale = Vector3::new(0.5, 0.5, 0.5);
+                ctx.world.add_component(player, transform);
+
+                let collider = Collider::new(
+                    ColliderShape::Cuboid {
+                        size: Vector3::new(1.0, 1.0, 1.0),
+                    },
+                    Vector3::new(0.0, 0.0, 0.0),
+                );
+                ctx.world.add_component(player, collider);
             }
             ServerEvent::ClientDisconnected { client_id, reason } => {
                 println!("client {client_id} disconnected: {reason}");
@@ -95,10 +115,9 @@ pub fn find_player(world: &World, client_id: u64) -> Option<Entity> {
 
 pub fn apply_player_movement(ctx: &mut ServerCtx) {
     let speed = MOVE_SPEED / TICK_RATE_HZ as f32;
-    let mut arrived = Vec::new();
 
-    for (client_id, target) in &ctx.targets {
-        let Some(target) = target else {
+    for (client_id, target) in ctx.targets.iter_mut() {
+        let Some(path) = target.as_mut() else {
             continue;
         };
         let Some(player) = find_player(&ctx.world, *client_id) else {
@@ -107,23 +126,24 @@ pub fn apply_player_movement(ctx: &mut ServerCtx) {
         let Some(transform) = ctx.world.get_component_mut::<Transform>(player) else {
             continue;
         };
-
-        let to_target = target - transform.position;
-        if to_target.norm_squared() < ARRIVE_RADIUS * ARRIVE_RADIUS {
-            arrived.push(*client_id);
-            continue;
+        while let Some(&waypoint) = path.first() {
+            let to_waypoint = waypoint - transform.position;
+            if to_waypoint.norm_squared() < ARRIVE_RADIUS * ARRIVE_RADIUS {
+                path.remove(0);
+                continue;
+            }
+            let step = to_waypoint.normalize() * speed;
+            transform.position += if step.norm_squared() >= to_waypoint.norm_squared() {
+                to_waypoint
+            } else {
+                step
+            };
+            break;
         }
 
-        let step = to_target.normalize() * speed;
-        transform.position += if step.norm_squared() >= to_target.norm_squared() {
-            to_target
-        } else {
-            step
-        };
-    }
-
-    for client_id in arrived {
-        ctx.targets.insert(client_id, None);
+        if path.is_empty() {
+            *target = None;
+        }
     }
 }
 

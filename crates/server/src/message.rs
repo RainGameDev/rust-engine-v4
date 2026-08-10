@@ -1,9 +1,11 @@
 use anyhow::Result;
 use engine_core::log_warn;
+use engine_core::ecs::components::engine_components::transform::Transform;
 use engine_core::networking::INPUT_CHANNEL;
 use engine_core::networking::packet::{MoveTo, Packet};
 
 use crate::context::ServerCtx;
+use crate::find_player;
 
 /// A client to server packet plus how to apply it to the server world.
 pub trait Incoming: Packet {
@@ -12,10 +14,36 @@ pub trait Incoming: Packet {
 
 impl Incoming for MoveTo {
     fn handle(self, ctx: &mut ServerCtx, client_id: u64) {
-        ctx.targets.insert(
-            client_id,
-            Some(nalgebra::Vector3::new(self.target[0], self.target[1], self.target[2])),
-        );
+        let Some(player) = find_player(&ctx.world, client_id) else {
+            return;
+        };
+        let Some(transform) = ctx.world.get_component::<Transform>(player) else {
+            return;
+        };
+        let map = &ctx.map;
+
+        // Where the client clicked, in tile space.
+        let click = nalgebra::Vector3::new(self.target[0], self.target[1], self.target[2]);
+        let (tx, tz) = map.tile_coord(click);
+        let Some((wx, wz)) = map.nearest_walkable(tx, tz) else {
+            return;
+        };
+
+        // A* from the player's current tile to the requested one. Recomputing
+        // from the live position makes every new click replace the old path.
+        let from = map.tile_coord(transform.position);
+        if !map.in_bounds(from.0, from.1) {
+            return;
+        }
+        let Some(tiles) = map.pathfind(from, (wx, wz)) else {
+            return;
+        };
+
+        let path = tiles
+            .iter()
+            .filter_map(|&(x, z)| map.tile_center(x, z))
+            .collect();
+        ctx.targets.insert(client_id, Some(path));
     }
 }
 

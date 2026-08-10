@@ -42,9 +42,15 @@ impl Schedule {
             }
         }
 
+        // Refresh global transforms before update systems run so collider/raycast
+        // code sees current world-space positions (snapshots may carry stale globals).
+        transform_update(world)?;
+
         run_system(world, UpdateSystem::sorted())?;
         transform_update(world)?;
         run_system(world, LateUpdateSystem::sorted())?;
+
+        transform_update(world)?;
 
         Ok(())
     }
