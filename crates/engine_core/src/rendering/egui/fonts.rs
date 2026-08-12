@@ -4,6 +4,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 #[derive(Resource, Debug, Clone)]
+#[derive(Default)]
 pub struct FontRegistry {
     pub fonts: Vec<String>,
     pub active: String,
@@ -11,16 +12,6 @@ pub struct FontRegistry {
     needs_apply: bool,
 }
 
-impl Default for FontRegistry {
-    fn default() -> Self {
-        Self {
-            fonts: Vec::new(),
-            active: String::new(),
-            defs: FontDefinitions::default(),
-            needs_apply: false,
-        }
-    }
-}
 
 impl FontRegistry {
     /// Scan `dir` for .ttf / .otf / .ttc files and add them to the registry.

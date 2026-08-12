@@ -55,20 +55,18 @@ impl ColliderShape {
             }
         }
     }
+}
 
-    #[allow(unused)]
-    pub fn to_string(&self) -> String {
-        match self {
-            ColliderShape::Cuboid { size } => "Cube".into(),
-            ColliderShape::Sphere { radius } => "Sphere".into(),
-            ColliderShape::Capsule { radius, height } => "Capsule".into(),
-            ColliderShape::Cylinder { radius, height } => "Cylinder".into(),
-            ColliderShape::Mesh {
-                triangles,
-                bvh,
-                model_path,
-            } => "Mesh".into(),
-        }
+impl std::fmt::Display for ColliderShape {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let name = match self {
+            ColliderShape::Cuboid { .. } => "Cube",
+            ColliderShape::Sphere { .. } => "Sphere",
+            ColliderShape::Capsule { .. } => "Capsule",
+            ColliderShape::Cylinder { .. } => "Cylinder",
+            ColliderShape::Mesh { .. } => "Mesh",
+        };
+        f.write_str(name)
     }
 }
 
@@ -212,9 +210,9 @@ impl Collider {
         ];
 
         let mut edge_axes: Vec<Vector3<f32>> = Vec::new();
-        for i in 0..3 {
-            for j in 0..3 {
-                let cross = axes_a[i].cross(&axes_b[j]);
+        for axis_a in &axes_a {
+            for axis_b in &axes_b {
+                let cross = axis_a.cross(axis_b);
                 if cross.norm_squared() > 1e-10 {
                     edge_axes.push(cross.normalize());
                 }

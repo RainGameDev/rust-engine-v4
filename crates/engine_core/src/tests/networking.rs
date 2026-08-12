@@ -113,7 +113,9 @@ fn movement_round_trip() {
     while Instant::now() < deadline {
         pump_once(&mut client, &mut server, &mut transport, delta);
         for message in client.drain::<ServerMessage>(SNAPSHOT_CHANNEL).unwrap() {
-            let ServerMessage::Snapshot(snapshot) = message;
+            let ServerMessage::Snapshot(snapshot) = message else {
+                continue;
+            };
             assert_eq!(snapshot.entities.len(), 1);
             assert_eq!(snapshot.entities[0].network_id, 1);
             got_snapshot = true;

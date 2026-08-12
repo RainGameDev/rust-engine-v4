@@ -2,7 +2,7 @@ pub use inventory;
 
 use std::any::TypeId;
 
-use crate::ecs::components::{BoxedComponent, Component, archetype::Column};
+use crate::ecs::components::{BoxedComponent, archetype::Column};
 
 /// Metadata per type by `#[derive(Component)]`,
 /// collected automatically at startup via `inventory`

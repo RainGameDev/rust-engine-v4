@@ -72,7 +72,7 @@ impl<T: Asset> AssetMap<T> {
     pub fn get(&self, handle: Handle<T>) -> Option<&T> {
         self.slots.get(handle.index as usize).and_then(|slot| {
             (slot.generation == handle.generation)
-                .then(|| slot.value.as_ref())
+                .then_some(slot.value.as_ref())
                 .flatten()
         })
     }
@@ -81,7 +81,7 @@ impl<T: Asset> AssetMap<T> {
     pub fn get_mut(&mut self, handle: Handle<T>) -> Option<&mut T> {
         self.slots.get_mut(handle.index as usize).and_then(|slot| {
             (slot.generation == handle.generation)
-                .then(|| slot.value.as_mut())
+                .then_some(slot.value.as_mut())
                 .flatten()
         })
     }

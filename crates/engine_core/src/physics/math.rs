@@ -1,4 +1,4 @@
-use nalgebra::{Quaternion, UnitQuaternion, Vector3};
+use nalgebra::{UnitQuaternion, Vector3};
 
 /// Rotates a vector by a quaternion
 pub fn rotate_vector(q: UnitQuaternion<f32>, v: Vector3<f32>) -> Vector3<f32> {

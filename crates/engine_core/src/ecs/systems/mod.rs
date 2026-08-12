@@ -1,6 +1,6 @@
 use std::sync::OnceLock;
 
-use crate::{ecs::World, log_debug};
+use crate::ecs::World;
 use anyhow::Result;
 use macros::Resource;
 
@@ -202,7 +202,7 @@ impl HasPriority for PreRenderSystem {
 
 pub fn run_system<S: ScheduledSystem>(world: &mut World, systems: &[S]) -> Result<()> {
     for system in systems {
-        if let Err(err) = (system.func())(world) {
+        if let Err(_err) = (system.func())(world) {
             // crate::log_error!(reason: "system returned an error", "'{}': {err:?}", system.name());
         }
     }
@@ -215,7 +215,7 @@ pub fn run_fixed_update(
     delta: f32,
 ) -> Result<()> {
     for system in systems {
-        if let Err(err) = (system.func)(world, delta) {
+        if let Err(_err) = (system.func)(world, delta) {
             // crate::log_error!(reason: "fixed system returned an error", "'{}': {err:?}", system.name());
         }
     }

@@ -1,4 +1,4 @@
-use macros::{Component, component};
+use macros::component;
 use nalgebra::{Matrix4, Orthographic3, Perspective3, Point3, Vector3};
 
 use crate::ecs::components::engine_components::transform::Transform;

@@ -6,6 +6,7 @@ use std::{
 };
 
 use anyhow::Result;
+use macros::Resource;
 use winit::{
     application::ApplicationHandler,
     event::WindowEvent,
@@ -21,7 +22,7 @@ use crate::{
         systems::{StartSystem, run_system, scheduler::Schedule},
     },
     input::InputManager,
-    log_error, log_warn,
+    log_error, log_info, log_warn,
     networking::client::{NetworkClient, pump_network},
     rendering::{core::frame_info::DrawInfo, egui::context::EguiContext},
     utils::directory_check::load_directory,
@@ -36,6 +37,9 @@ use crate::{
     },
     tiles::TileMap,
 };
+
+#[derive(Resource, Debug)]
+pub struct Quit(pub String);
 
 /// App that runs the window, and engine
 pub struct App {
@@ -87,19 +91,15 @@ impl ApplicationHandler for App {
             match load_gltf_file(Path::new(&model_path), context, command_pool) {
                 Ok(loaded) => {
                     for mesh in loaded.meshes {
-                        let handle = self.engine.ecs_world.add_asset(mesh, model_path.clone());
-                        crate::log_info!("loaded mesh: {} -> {:?}", model_path, handle);
+                        self.engine.ecs_world.add_asset(mesh, model_path.clone());
                     }
                     for skeleton in loaded.skeletons {
-                        let handle = self
-                            .engine
+                        self.engine
                             .ecs_world
                             .add_asset(skeleton, model_path.clone());
-                        crate::log_info!("loaded skeleton: {} -> {:?}", model_path, handle);
                     }
                     for clip in loaded.animations {
-                        let handle = self.engine.ecs_world.add_asset(clip, model_path.clone());
-                        crate::log_info!("loaded animation: {} -> {:?}", model_path, handle);
+                        self.engine.ecs_world.add_asset(clip, model_path.clone());
                     }
                 }
                 Err(err) => {
@@ -109,6 +109,7 @@ impl ApplicationHandler for App {
         }
 
         let context = EguiContext(self.renderer.as_ref().unwrap().get_egui_context());
+        egui_extras::install_image_loaders(&context.0);
         self.engine.ecs_world.add_resource(context);
 
         // Build the terrain mesh from the bundled default map and spawn it.
@@ -129,7 +130,9 @@ impl ApplicationHandler for App {
                 self.engine
                     .ecs_world
                     .add_component(entity, ModelRenderer { model: handle });
-                self.engine.ecs_world.add_component(entity, tile_map.build_collider());
+                self.engine
+                    .ecs_world
+                    .add_component(entity, tile_map.build_collider());
                 crate::log_info!("spawned terrain: {} tiles", tile_map.width * tile_map.depth);
             }
             Err(err) => crate::log_error!(reason: "failed to load terrain", "{err:?}"),
@@ -158,6 +161,12 @@ impl ApplicationHandler for App {
         _window_id: WindowId,
         event: WindowEvent,
     ) {
+        if self.engine.ecs_world.has_resource::<Quit>() {
+            let quit = self.engine.ecs_world.get_resource::<Quit>().unwrap();
+            log_info!("Quitting due to reason: {}", quit.0);
+            event_loop.exit();
+        }
+
         if self.rendering_info.is_none() {
             return;
         }

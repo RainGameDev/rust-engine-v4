@@ -675,7 +675,7 @@ impl VulkanRenderingContext {
         vertices: &[T],
         command_pool: vk::CommandPool,
     ) -> Result<(vk::Buffer, vk::DeviceMemory)> {
-        let buffer_size = (size_of::<T>() * vertices.len()) as vk::DeviceSize;
+        let buffer_size = std::mem::size_of_val(vertices) as vk::DeviceSize;
 
         // Create staging buffer
         let (staging_buffer, staging_memory) = self.create_buffer(
@@ -738,7 +738,7 @@ impl VulkanRenderingContext {
         indices: &[u32],
         command_pool: vk::CommandPool,
     ) -> Result<(vk::Buffer, vk::DeviceMemory)> {
-        let buffer_size = (std::mem::size_of::<u32>() * indices.len()) as vk::DeviceSize;
+        let buffer_size = std::mem::size_of_val(indices) as vk::DeviceSize;
 
         // staging
         let (staging_buffer, staging_memory) = self.create_buffer(

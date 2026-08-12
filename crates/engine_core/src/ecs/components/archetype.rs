@@ -38,7 +38,7 @@ pub struct Column {
 pub type ArchetypeSignature = Vec<TypeId>;
 impl Column {
     /// Creates an empty column sized for type `T`.
-    pub(crate) fn new<T: 'static>() -> Self {
+    pub fn new<T: 'static>() -> Self {
         Self {
             data: std::ptr::NonNull::dangling().as_ptr(),
             len: 0,
@@ -157,7 +157,7 @@ impl Drop for Column {
 #[allow(unused)]
 impl Archetype {
     /// Creates an empty archetype for the given signature.
-    pub(crate) fn new(signature: ArchetypeSignature) -> Self {
+    pub fn new(signature: ArchetypeSignature) -> Self {
         Self {
             entities: Vec::new(),
             columns: HashMap::new(),

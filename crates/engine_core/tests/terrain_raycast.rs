@@ -93,7 +93,7 @@ fn stale_global_position_is_refreshed_before_raycast() {
     );
 
     // Same ordering as Schedule::tick: refresh globals before update systems.
-    transform_update(&mut world);
+    transform_update(&mut world).unwrap();
 
     // A ray aimed at the player's real position must hit the player, not nothing.
     let snapshots = build_collider_snapshot(&world);

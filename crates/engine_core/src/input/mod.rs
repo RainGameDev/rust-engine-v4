@@ -542,42 +542,27 @@ impl InputManager {
 
     fn source_value(&self, source: &InputSource) -> f32 {
         match source {
-            InputSource::Keyboard(key) => {
-                if self.keyboard_pressed.contains(key) {
+            InputSource::Keyboard(key)
+                if self.keyboard_pressed.contains(key) => {
                     1.0
-                } else {
-                    0.0
                 }
-            }
-            InputSource::Mouse(button) => {
-                if self.mouse_buttons_pressed.contains(button) {
+            InputSource::Mouse(button)
+                if self.mouse_buttons_pressed.contains(button) => {
                     1.0
-                } else {
-                    0.0
                 }
-            }
-            InputSource::GamepadButton(button) => {
-                if self.gamepad_buttons_pressed.contains(button) {
+            InputSource::GamepadButton(button)
+                if self.gamepad_buttons_pressed.contains(button) => {
                     1.0
-                } else {
-                    0.0
                 }
-            }
             InputSource::GamepadAxis(axis) => self.gamepad_axes.get(axis).copied().unwrap_or(0.0),
-            InputSource::MouseWheelUp => {
-                if self.scroll_delta > 0.0 {
+            InputSource::MouseWheelUp
+                if self.scroll_delta > 0.0 => {
                     1.0
-                } else {
-                    0.0
                 }
-            }
-            InputSource::MouseWheelDown => {
-                if self.scroll_delta < 0.0 {
+            InputSource::MouseWheelDown
+                if self.scroll_delta < 0.0 => {
                     1.0
-                } else {
-                    0.0
                 }
-            }
             InputSource::Touch => {
                 if self.touches.is_empty() {
                     0.0

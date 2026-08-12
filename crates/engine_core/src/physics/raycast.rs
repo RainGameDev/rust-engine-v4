@@ -85,11 +85,11 @@ pub struct ColliderSnapshot {
 
 /// Takes a snapshot of every entity in the world that has a Collider component
 pub fn build_collider_snapshot(world: &World) -> Vec<ColliderSnapshot> {
-    let query: Query<(&mut Collider, &Transform, Entity)> = Query::new(&world);
+    let query: Query<(&mut Collider, &Transform, Entity)> = Query::new(world);
 
     query
         .iter()
-        .filter_map(|(collider, transform, entity)| {
+        .map(|(collider, transform, entity)| {
             let position = transform.global_position;
             let scale = transform.global_scale;
             let rotation = transform.global_rotation;
@@ -117,7 +117,7 @@ pub fn build_collider_snapshot(world: &World) -> Vec<ColliderSnapshot> {
             let axes = collider.world_axes(rotation);
             let half_extents = collider.half_extents();
 
-            Some(ColliderSnapshot {
+            ColliderSnapshot {
                 id: entity,
                 center,
                 axes,
@@ -126,7 +126,7 @@ pub fn build_collider_snapshot(world: &World) -> Vec<ColliderSnapshot> {
                 collider: collider.clone(),
                 position,
                 rotation,
-            })
+            }
         })
         .collect()
 }
@@ -293,11 +293,10 @@ pub fn raycast_colliders_raw(
     let mut nearest_dist = max_distance;
 
     for snap in snapshots {
-        if let Some(ref ids) = ignore_ids {
-            if ids.contains(&snap.id) {
+        if let Some(ref ids) = ignore_ids
+            && ids.contains(&snap.id) {
                 continue;
             }
-        }
         if snap.collider.is_area {
             continue;
         }
@@ -332,10 +331,10 @@ pub fn collider_raycast(
 
 /// Raycast forward from the active camera
 pub fn collider_raycast_camera(world: &World, range: f32) -> Option<ColliderHit> {
-    let query: Query<(&mut Camera, &Transform, Entity)> = Query::new(&world);
+    let query: Query<(&mut Camera, &Transform, Entity)> = Query::new(world);
     let queries: Vec<(&mut Camera, &Transform, Entity)> = query.iter().collect();
-    let (camera, transform, entity) = queries.first().unwrap();
-    let ray = get_camera_ray(&transform, Direction::Forward);
+    let (_camera, transform, entity) = queries.first().unwrap();
+    let ray = get_camera_ray(transform, Direction::Forward);
     let snapshots = build_collider_snapshot(world);
     // Ignore the camera entity itself so it can't hit its own collider
     raycast_colliders_raw(&ray, range, &snapshots, Some(vec![*entity]))
@@ -407,12 +406,10 @@ fn ray_vs_mesh(
             for i in node.tri_start..node.tri_start + node.tri_count {
                 if let Some((t, local_normal)) =
                     ray_vs_triangle(&local_ray, &bvh.triangles[i as usize])
-                {
-                    if t < nearest_t {
+                    && t < nearest_t {
                         nearest_t = t;
                         nearest_normal = Some(mesh_rot * local_normal);
                     }
-                }
             }
         } else {
             stack.push(node.left);
@@ -440,7 +437,7 @@ fn ray_vs_triangle(ray: &Ray, tri: &[Vector3<f32>; 3]) -> Option<(f32, Vector3<f
     }
 
     let q = s.cross(&e1);
-    let v = f * ray.direction.dot(&&q);
+    let v = f * ray.direction.dot(&q);
     if v < 0.0 || u + v > 1.0 {
         return None;
     }

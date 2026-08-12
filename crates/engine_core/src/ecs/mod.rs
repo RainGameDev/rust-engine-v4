@@ -278,10 +278,7 @@ impl World {
     }
 
     /// Removes a component type from an entity, moving it to the archetype without that type.
-    pub fn remove_component<T: Component>(&mut self, entity: Entity) -> Option<T>
-    where
-        T: Clone,
-    {
+    pub fn remove_component<T: Component + Clone>(&mut self, entity: Entity) -> Option<T> {
         let value = self.get_component::<T>(entity)?.clone();
         // reuses your existing remove_component(entity, TypeId) archetype-move logic
         self.remove_component_by_type_id(entity, TypeId::of::<T>());
@@ -329,6 +326,12 @@ impl World {
     pub fn remove_resource<T: Resource>(&mut self) {
         self.resource_map.remove::<T>();
     }
+
+    /// Does resource `T` exist?
+    pub fn has_resource<T: Resource>(&self) -> bool {
+        self.resource_map.get::<T>().is_ok()
+    }
+
     /// Returns the resource of type `T` immutably.
     pub fn get_resource<T: Resource>(&self) -> Result<Ref<'_, T>> {
         self.resource_map.get::<T>()

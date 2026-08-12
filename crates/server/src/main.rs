@@ -39,7 +39,7 @@ fn main() -> Result<()> {
             ctx.server.update(delta);
             transport.update(delta, &mut ctx.server)?;
 
-            handle_connection_events(&mut ctx);
+            handle_connection_events(&mut ctx)?;
             handle_incoming_messages(&mut ctx)?;
             apply_player_movement(&mut ctx);
 

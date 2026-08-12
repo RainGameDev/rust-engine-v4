@@ -9,7 +9,6 @@ use anyhow::Result;
 use engine_core::ecs::components::engine_components::transform::Transform;
 use engine_core::ecs::entities::Entity;
 use engine_core::ecs::query::query::Query;
-use engine_core::log_debug;
 use engine_core::networking::packet::ServerMessage;
 use engine_core::networking::snapshot::build_snapshot;
 use engine_core::networking::{Networked, REGISTRY_CHANNEL};

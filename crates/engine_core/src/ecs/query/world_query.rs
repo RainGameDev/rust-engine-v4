@@ -6,6 +6,12 @@ use crate::ecs::entities::Entity;
 
 /// Defines what a query term fetches per row, and which archetypes qualify.
 /// Implemented for `Entity`, `&T`, `&mut T`, `Option<Q>`, and tuples of these.
+///
+/// # Safety
+///
+/// Implementors must uphold the invariant that `fetch` only touches the data
+/// the `matches_archetype` check guaranteed to exist, and that `&mut T` terms
+/// never alias another term's data for the same entity.
 pub unsafe trait WorldQuery {
     /// The value produced per matching entity.
     /// Generic over the borrow lifetime of the underlying archetype storage.
@@ -15,7 +21,10 @@ pub unsafe trait WorldQuery {
     fn matches_archetype(archetype: &Archetype) -> bool;
 
     /// Reads/writes the value for `row` within `archetype`.
-    /// SAFETY: caller must ensure `matches_archetype` returned true for this
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure `matches_archetype` returned true for this
     /// archetype, `row` is in bounds, and aliasing rules for `&mut T` are upheld.
     unsafe fn fetch<'w>(archetype: &'w Archetype, row: usize) -> Self::Item<'w>;
 }

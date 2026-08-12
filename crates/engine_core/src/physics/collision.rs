@@ -1,12 +1,11 @@
-use nalgebra::{Quaternion, UnitQuaternion, Vector3};
+use nalgebra::{UnitQuaternion, Vector3};
 
 use crate::{
     ecs::{World, components::engine_components::transform::Transform, entities::Entity},
     physics::{
         bvh::Bvh,
         math::{
-            closest_point_on_triangle, closest_points_segment_triangle, rotate_vector,
-            triangle_normal,
+            closest_point_on_triangle, closest_points_segment_triangle, triangle_normal,
         },
         velocity::Velocity,
     },

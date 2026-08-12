@@ -181,7 +181,7 @@ impl VulkanRenderer {
             )?;
 
             let mut frames = Vec::with_capacity(command_buffers.len());
-            for (_index, &command_buffer) in command_buffers.iter().enumerate() {
+            for &command_buffer in command_buffers.iter() {
                 let image_available_semaphore = context
                     .device
                     .create_semaphore(&vk::SemaphoreCreateInfo::default(), None)?;

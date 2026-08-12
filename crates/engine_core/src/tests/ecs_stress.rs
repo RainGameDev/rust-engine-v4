@@ -127,7 +127,7 @@ fn archetype_stress_one_million_entities() {
     for _ in 0..entity_total {
         let entity = world.spawn();
 
-        let chosen: Vec<&Inserter> = INSERTERS.choose_multiple(&mut rng, 3).collect();
+        let chosen: Vec<&Inserter> = INSERTERS.sample(&mut rng, 3).collect();
         for inserter in chosen {
             inserter(&mut world, entity, &mut rng);
         }

@@ -78,7 +78,7 @@ impl Default for AnimationPlayer {
 
 #[fixed_update]
 fn advance_animations(
-    mut players: Query<(&mut AnimationPlayer, &mut SkinnedMesh)>,
+    players: Query<(&mut AnimationPlayer, &mut SkinnedMesh)>,
     clips: Assets<AnimationClip>,
     skeletons: Assets<Skeleton>,
     delta: f32,
