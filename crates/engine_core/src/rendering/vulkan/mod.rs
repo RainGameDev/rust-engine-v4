@@ -1,6 +1,7 @@
 use crate::rendering::{
     core::frame_info::{FrameInfo, PushConstants, matrix_to_push_constant},
     egui::renderer::UIRenderer,
+    rendering_settings::RenderingSettings,
     vulkan::{
         context::{RenderingContextAttributes, VulkanRenderingContext, depth_image_aspect},
         frame::VulkanFrame,
@@ -31,11 +32,15 @@ pub mod swapchain;
 pub struct RenderingInfo {
     pub context: VulkanRenderingContext,
     pub window: Arc<Window>,
-    // pub settings: RenderingSettings,
+    pub settings: RenderingSettings,
 }
 
 impl RenderingInfo {
     pub fn new(event_loop: &ActiveEventLoop) -> Self {
+        Self::with_settings(event_loop, RenderingSettings::default())
+    }
+
+    pub fn with_settings(event_loop: &ActiveEventLoop, settings: RenderingSettings) -> Self {
         let window = Arc::new(event_loop.create_window(Default::default()).unwrap());
 
         RenderingInfo {
@@ -45,6 +50,7 @@ impl RenderingInfo {
             })
             .unwrap(),
             window,
+            settings,
         }
     }
 }
@@ -60,6 +66,7 @@ pub struct VulkanRenderer {
     pub pipeline: Pipeline,
     pub pipeline_layout: PipelineLayout,
     pub ui_renderer: UIRenderer,
+    pub settings: RenderingSettings,
     joint_buffer: vk::Buffer,
     joint_buffer_memory: vk::DeviceMemory,
     joint_descriptor_set_layout: vk::DescriptorSetLayout,
@@ -85,6 +92,7 @@ fn load_shader_module(
 
 impl VulkanRenderer {
     pub fn new(rendering_info: RenderingInfo) -> anyhow::Result<Self> {
+        let settings = rendering_info.settings.clone();
         let swapchain = VulkanSwapchain::new(
             rendering_info.context.clone().into(),
             rendering_info.window.clone(),
@@ -92,10 +100,14 @@ impl VulkanRenderer {
         // swapchain.resize()?;
 
         // TODO: Replace this with an asset loader
-        let vertex_shader =
-            load_shader_module(&rendering_info.context.clone().into(), "shader.vert.spv")?;
-        let fragment_shader =
-            load_shader_module(&rendering_info.context.clone().into(), "shader.frag.spv")?;
+        let vertex_shader = load_shader_module(
+            &rendering_info.context.clone().into(),
+            &settings.default_vertex_shader,
+        )?;
+        let fragment_shader = load_shader_module(
+            &rendering_info.context.clone().into(),
+            &settings.default_fragment_shader,
+        )?;
 
         unsafe {
             let context = rendering_info.context.clone();
@@ -159,6 +171,8 @@ impl VulkanRenderer {
                 swapchain.format,
                 pipeline_layout,
                 swapchain.depth.format,
+                settings.rasterization_settings,
+                settings.depth_settings,
             )?;
 
             context.device.destroy_shader_module(vertex_shader, None);
@@ -216,6 +230,7 @@ impl VulkanRenderer {
                 swapchain,
                 ui_renderer,
                 current_image_index: 0,
+                settings,
             };
 
             // rendering_info.renderer = Some(Box::new(renderer));

@@ -1,6 +1,7 @@
 use ash::vk;
+use macros::Resource;
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Resource, Debug)]
 pub struct RenderingSettings {
     pub depth_settings: DepthSettings,
     pub rasterization_settings: RasterizationSettings,
@@ -26,7 +27,7 @@ impl Default for RenderingSettings {
 }
 
 /// The settings for a depth test
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 pub struct DepthSettings {
     pub depth_test_enabled: bool,
     pub depth_compare_op: vk::CompareOp,
@@ -42,7 +43,7 @@ impl Default for DepthSettings {
 }
 
 /// The settings for rasterization
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 pub struct RasterizationSettings {
     pub polygon_mode: vk::PolygonMode,
     pub cull_mode: vk::CullModeFlags,
@@ -53,16 +54,16 @@ pub struct RasterizationSettings {
 impl Default for RasterizationSettings {
     fn default() -> Self {
         Self {
-            polygon_mode: vk::PolygonMode::LINE,
+            polygon_mode: vk::PolygonMode::FILL,
             cull_mode: vk::CullModeFlags::NONE,
-            front_face: vk::FrontFace::COUNTER_CLOCKWISE,
-            line_width: 10.0,
+            front_face: vk::FrontFace::CLOCKWISE,
+            line_width: 1.0,
         }
     }
 }
 
 /// The settings for image sampling
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 pub struct ImageSettings {
     pub filter_mode: vk::Filter,
     pub address_mode: vk::SamplerAddressMode,
@@ -83,7 +84,7 @@ impl Default for ImageSettings {
     }
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 pub struct DebugSettings {
     pub collision_debug_enabled: bool,
     pub debug_line_width: f32,

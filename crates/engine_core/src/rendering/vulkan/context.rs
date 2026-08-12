@@ -5,7 +5,7 @@ use ash::{
     Device, Entry, Instance,
     khr::*,
     vk::{
-        self, AttachmentLoadOp, AttachmentStoreOp, ClearValue, CompareOp, ImageLayout, Queue,
+        self, AttachmentLoadOp, AttachmentStoreOp, ClearValue, ImageLayout, Queue,
         RenderingAttachmentInfo,
     },
 };
@@ -14,6 +14,7 @@ use winit::{raw_window_handle::HasDisplayHandle, window::Window};
 
 use crate::rendering::{
     core::vertex::{Vertex, VertexDefinition},
+    rendering_settings::{DepthSettings, RasterizationSettings},
     vulkan::{
         debug::{DebugUtils, VALIDATION_LAYER_NAME, is_validation_layer_available},
         device::PhysicalDevice,
@@ -242,6 +243,7 @@ impl VulkanRenderingContext {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn create_graphics_pipeline(
         &self,
         vertex_shader: vk::ShaderModule,
@@ -250,6 +252,8 @@ impl VulkanRenderingContext {
         image_format: vk::Format,
         pipeline_layout: vk::PipelineLayout,
         depth_format: vk::Format,
+        rasterization_settings: RasterizationSettings,
+        depth_settings: DepthSettings,
     ) -> Result<vk::Pipeline> {
         let entry_point = std::ffi::CString::new("main").unwrap();
 
@@ -301,11 +305,11 @@ impl VulkanRenderingContext {
                             &vk::PipelineRasterizationStateCreateInfo::default()
                                 .depth_clamp_enable(false)
                                 .rasterizer_discard_enable(false)
-                                .polygon_mode(vk::PolygonMode::FILL)
-                                .cull_mode(vk::CullModeFlags::NONE)
-                                .front_face(vk::FrontFace::CLOCKWISE)
+                                .polygon_mode(rasterization_settings.polygon_mode)
+                                .cull_mode(rasterization_settings.cull_mode)
+                                .front_face(rasterization_settings.front_face)
                                 .depth_bias_enable(false)
-                                .line_width(1.0),
+                                .line_width(rasterization_settings.line_width),
                         )
                         .multisample_state(
                             &vk::PipelineMultisampleStateCreateInfo::default()
@@ -327,9 +331,9 @@ impl VulkanRenderingContext {
                         )
                         .depth_stencil_state(
                             &vk::PipelineDepthStencilStateCreateInfo::default()
-                                .depth_test_enable(true)
-                                .depth_write_enable(true)
-                                .depth_compare_op(CompareOp::LESS),
+                                .depth_test_enable(depth_settings.depth_test_enabled)
+                                .depth_write_enable(depth_settings.depth_test_enabled)
+                                .depth_compare_op(depth_settings.depth_compare_op),
                         )
                         .layout(pipeline_layout)
                         .render_pass(vk::RenderPass::null())

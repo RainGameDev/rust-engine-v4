@@ -78,6 +78,9 @@ impl ApplicationHandler for App {
         event_loop.listen_device_events(winit::event_loop::DeviceEvents::Always);
         self.rendering_info = Some(RenderingInfo::new(event_loop));
         self.renderer = Some(VulkanRenderer::new(self.rendering_info.clone().unwrap()).unwrap());
+        self.engine
+            .ecs_world
+            .add_resource(self.rendering_info.as_ref().unwrap().settings.clone());
         let context = &self.rendering_info.as_ref().unwrap().context;
         let command_pool = self.renderer.as_ref().unwrap().command_pool;
 
