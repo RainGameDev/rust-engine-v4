@@ -5,6 +5,7 @@ edition.workspace = true
 
 [dependencies]
 engine_core = { path = "../engine_core" }
+game_data = { path = "../game_data" }
 renet.workspace = true 
 bincode.workspace = true 
 serde.workspace = true

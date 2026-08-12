@@ -4,6 +4,7 @@ use anyhow::Result;
 use engine_core::ecs::World;
 use engine_core::ecs::components::engine_components::transform::transform_update;
 use engine_core::ecs::systems::{FixedUpdateSystem, UpdateSystem, run_fixed_update, run_system};
+use game_data::registry::GameRegistry;
 use server::context::ServerCtx;
 use server::{
     TICK_RATE_HZ, apply_player_movement, broadcast_snapshots, handle_connection_events,
@@ -13,11 +14,15 @@ use server::{
 fn main() -> Result<()> {
     let world = World::new();
     let (server, mut transport, addr) = setup_networking()?;
+
+    let registry = GameRegistry::load_from_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/data"))?;
+    println!("Loaded {} item defs into registry", registry.items.len());
     let mut ctx = ServerCtx {
         server,
         world,
         map: engine_core::tiles::TileMap::load_default()?,
         targets: server::PlayerTargets::new(),
+        registry,
     };
     println!("Dedicated server listening on {addr}");
 
@@ -46,7 +51,7 @@ fn main() -> Result<()> {
             run_system(&mut ctx.world, UpdateSystem::sorted())?;
 
             // Keep global transforms in sync with movement before snapshotting.
-            transform_update(&mut ctx.world);
+            transform_update(&mut ctx.world).unwrap();
 
             broadcast_snapshots(&mut ctx);
 

@@ -20,24 +20,16 @@ pub use macros::{Component, Resource};
 pub use macros::{fixed_update, late_update, start, update};
 pub use nalgebra;
 
-use anyhow::Result;
-use nalgebra::Vector3;
-
-use crate::ecs::commands::Commands;
-use crate::ecs::systems::param::ResMut;
-use crate::rendering::egui::context::EguiContext;
 use crate::{
     assets::AssetRegistration,
     ecs::{
         World,
-        components::engine_components::{
-            camera::{Camera, GameCamera},
-            transform::Transform,
-        },
+        components::engine_components::{camera::Camera, transform::Transform},
         query::query::Query,
     },
     rendering::core::frame_info::FrameInfo,
 };
+use anyhow::Result;
 
 /// Engine handler
 pub struct Engine {
@@ -77,30 +69,4 @@ impl Default for Engine {
 pub fn init_core(auto_connect_addr: Option<std::net::SocketAddr>) -> Result<()> {
     let engine = Engine::new();
     window::run(engine, auto_connect_addr)
-}
-
-#[update]
-pub fn test(context: ResMut<EguiContext>) -> Result<()> {
-    egui::Window::new("").show(&context.0, |ui| {
-        egui::CentralPanel::default().show(ui, |ui| {
-            ui.heading("My egui Application");
-            ui.horizontal(|ui| {
-                let name_label = ui.label("Your name: ");
-            });
-        });
-    });
-    Ok(())
-}
-
-#[start]
-pub fn start(commands: &mut Commands) -> Result<()> {
-    let camera = commands.spawn();
-    commands.add_component(
-        camera,
-        Transform::from_position(Vector3::new(0.0, 0.0, 100.0)),
-    );
-    commands.add_component(camera, Camera::perspective(60.0, 16.0 / 9.0, 0.1, 1000.0));
-    commands.add_component(camera, GameCamera);
-
-    Ok(())
 }

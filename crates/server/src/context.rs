@@ -1,5 +1,6 @@
 use engine_core::ecs::World;
 use engine_core::tiles::TileMap;
+use game_data::registry::GameRegistry;
 use renet::RenetServer;
 
 use crate::PlayerTargets;
@@ -12,4 +13,6 @@ pub struct ServerCtx {
     pub map: TileMap,
     /// Last walk target requested by each client (`None` once arrived).
     pub targets: PlayerTargets,
+    /// The data registry for the server (items, quests, npcs ect ect ect)
+    pub registry: GameRegistry,
 }

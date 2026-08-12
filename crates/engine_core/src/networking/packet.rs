@@ -20,4 +20,8 @@ impl Packet for MoveTo {
 pub enum ServerMessage {
     /// The authoritative state of all networked entities.
     Snapshot(Snapshot),
+    Registry {
+        version: u32,
+        bytes: Vec<u8>,
+    },
 }

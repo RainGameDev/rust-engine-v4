@@ -12,3 +12,6 @@ path = "src/main.rs"
 engine_core = { path = "../engine_core" }
 anyhow.workspace = true
 game = { path = "../game" }
+game_data = { path = "../game_data" }
+bincode.workspace = true
+

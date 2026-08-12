@@ -7,9 +7,10 @@ use renet::{ConnectionConfig, RenetClient};
 use renet_netcode::{ClientAuthentication, NetcodeClientTransport};
 
 use crate::ecs::World;
-use crate::networking::SNAPSHOT_CHANNEL;
+use crate::log_info;
 use crate::networking::packet::{Packet, ServerMessage};
 use crate::networking::snapshot::apply_snapshot;
+use crate::networking::{REGISTRY_CHANNEL, SNAPSHOT_CHANNEL};
 
 const PROTOCOL_ID: u64 = 7;
 
@@ -19,6 +20,12 @@ pub struct NetworkClient {
     client: RenetClient,
     transport: NetcodeClientTransport,
     client_id: u64,
+}
+
+#[derive(Debug, Resource)]
+pub struct IncomingRegistry {
+    pub version: u32,
+    pub bytes: Vec<u8>,
 }
 
 impl NetworkClient {
@@ -89,7 +96,11 @@ pub fn pump_network(world: &mut World, delta: Duration) -> Result<()> {
             Err(_) => return Ok(()),
         };
         network.tick(delta)?;
-        network.drain::<ServerMessage>(SNAPSHOT_CHANNEL)?
+
+        let mut snapshots = network.drain::<ServerMessage>(SNAPSHOT_CHANNEL)?;
+        let mut registries = network.drain::<ServerMessage>(REGISTRY_CHANNEL)?;
+        snapshots.append(&mut registries);
+        snapshots
     };
 
     for message in messages {
@@ -101,5 +112,10 @@ pub fn pump_network(world: &mut World, delta: Duration) -> Result<()> {
 fn handle_server_message(world: &mut World, message: ServerMessage) {
     match message {
         ServerMessage::Snapshot(snapshot) => apply_snapshot(world, snapshot),
+        ServerMessage::Registry { version, bytes } => {
+            log_info!("received registry v{version} ({} bytes)", bytes.len());
+            world.remove_resource::<IncomingRegistry>();
+            world.add_resource(IncomingRegistry { version, bytes });
+        }
     }
 }

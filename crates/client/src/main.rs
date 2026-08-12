@@ -1,4 +1,5 @@
 use engine_core::init_core;
+pub mod registry;
 
 fn main() -> anyhow::Result<()> {
     game::init();

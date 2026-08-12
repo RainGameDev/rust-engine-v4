@@ -1,15 +1,16 @@
 [package]
-name = "game"
+name = "game_data"
 version = "0.1.0"
 edition.workspace = true
 
+
+
 [lib]
-name = "game"
+name = "game_data"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 engine_core = { path = "../engine_core" }
-game_data = { path = "../game_data" }
+serde.workspace = true
+serde_json.workspace = true
 anyhow.workspace = true
-winit.workspace = true
-egui.workspace = true

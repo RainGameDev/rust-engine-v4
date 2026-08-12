@@ -10,9 +10,9 @@ use engine_core::ecs::components::engine_components::transform::Transform;
 use engine_core::ecs::entities::Entity;
 use engine_core::ecs::query::query::Query;
 use engine_core::log_debug;
-use engine_core::networking::Networked;
 use engine_core::networking::packet::ServerMessage;
 use engine_core::networking::snapshot::build_snapshot;
+use engine_core::networking::{Networked, REGISTRY_CHANNEL};
 use engine_core::physics::collider::ColliderShape;
 use engine_core::{ecs::World, physics::collider::Collider};
 use nalgebra::Vector3;
@@ -51,7 +51,7 @@ pub fn setup_networking() -> Result<(RenetServer, NetcodeServerTransport, std::n
     Ok((server, transport, public_addr))
 }
 
-pub fn handle_connection_events(ctx: &mut ServerCtx) {
+pub fn handle_connection_events(ctx: &mut ServerCtx) -> Result<()> {
     while let Some(event) = ctx.server.get_event() {
         match event {
             ServerEvent::ClientConnected { client_id } => {
@@ -79,6 +79,20 @@ pub fn handle_connection_events(ctx: &mut ServerCtx) {
                     Vector3::new(0.0, 0.0, 0.0),
                 );
                 ctx.world.add_component(player, collider);
+
+                let bytes = bincode::serialize(&ctx.registry)?;
+                let message = ServerMessage::Registry {
+                    version: ctx.registry.version,
+                    bytes,
+                };
+                let payload = bincode::serialize(&message)?;
+                println!(
+                    "sending registry v{} ({} items) to client {client_id}",
+                    ctx.registry.version,
+                    ctx.registry.items.len()
+                );
+                ctx.server
+                    .send_message(client_id, REGISTRY_CHANNEL, payload);
             }
             ServerEvent::ClientDisconnected { client_id, reason } => {
                 println!("client {client_id} disconnected: {reason}");
@@ -103,6 +117,8 @@ pub fn handle_connection_events(ctx: &mut ServerCtx) {
             }
         }
     }
+
+    Ok(())
 }
 
 pub fn find_player(world: &World, client_id: u64) -> Option<Entity> {

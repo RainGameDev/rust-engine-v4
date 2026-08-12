@@ -31,6 +31,11 @@ const MAX_PITCH: f32 = 1.5;
 #[derive(Debug, Resource)]
 pub struct TerrainMap(pub TileMap);
 
+#[derive(Debug, Resource, Default)]
+pub struct ClientData {
+    pub following_id: Option<u64>,
+}
+
 /// What the context menu was opened on. Resolved once at right-click time so the
 /// menu can't flicker between targets while the camera or mouse moves.
 #[derive(Debug, Clone, Copy)]
@@ -45,6 +50,7 @@ pub struct ContextMenuOpen(pub bool, pub Pos2, pub Option<ContextMenuTarget>);
 #[start]
 pub fn bind_input(commands: &mut Commands, mut input: ResMut<InputManager>) -> Result<()> {
     commands.add_resource(CameraState::default());
+    commands.add_resource(ClientData::default());
     commands.add_resource(TerrainMap(TileMap::load_default()?));
     commands.add_resource(ContextMenuOpen(false, Pos2::new(0.0, 0.0), None));
 
@@ -62,12 +68,38 @@ pub fn bind_input(commands: &mut Commands, mut input: ResMut<InputManager>) -> R
 }
 
 #[update]
+#[allow(clippy::too_many_arguments)]
+pub fn follow_update(
+    mut network: ResMut<NetworkClient>,
+    client_data: Res<ClientData>,
+    players: Query<(Entity, &Networked, &Transform)>,
+) -> Result<()> {
+    if let Some(id) = client_data.following_id {
+        let position = players
+            .iter()
+            .find(|(_, networked, _)| networked.id == id)
+            .map(|(_, _, transform)| transform.position)
+            .unwrap();
+        network.send(
+            INPUT_CHANNEL,
+            &MoveTo {
+                target: [position.x, position.y, position.z],
+            },
+        )?;
+    }
+
+    Ok(())
+}
+
+#[update]
+#[allow(clippy::too_many_arguments)]
 pub fn context_menu(
     input: Res<InputManager>,
     window_manager: Res<WindowManager>,
     context: Res<EguiContext>,
     mut network: ResMut<NetworkClient>,
     mut context_menu: ResMut<ContextMenuOpen>,
+    mut client_data: ResMut<ClientData>,
     cameras: Query<(&Camera, &Transform, Entity), With<GameCamera>>,
     terrain: Res<TerrainMap>,
     raycast: Raycast,
@@ -87,7 +119,8 @@ pub fn context_menu(
 
         // Opening: resolve the target once and cache it so it can't flicker.
         context_menu.1 = Pos2::new(mx, my);
-        context_menu.2 = resolve_context_target(mx, my, width, height, &cameras, &terrain, &raycast);
+        context_menu.2 =
+            resolve_context_target(mx, my, width, height, &cameras, &terrain, &raycast);
         context_menu.0 = context_menu.2.is_some();
         if !context_menu.0 {
             return Ok(());
@@ -103,7 +136,6 @@ pub fn context_menu(
     };
 
     let mut move_target: Option<Vector3<f32>> = None;
-    let mut attack_id: Option<u64> = None;
     let mut close_menu = false;
 
     egui::Window::new("ContextMenu")
@@ -119,11 +151,11 @@ pub fn context_menu(
 
                 ui.vertical(|ui| {
                     if let Some(id) = target.player_id {
-                        if ui.button("Attack").clicked() {
-                            attack_id = Some(id);
+                        if ui.button("Follow").clicked() {
+                            client_data.following_id = Some(id);
                         }
                     } else if let Some(tile) = target.tile_center
-                        && ui.button("Move To").clicked()
+                        && ui.button("Walk To").clicked()
                     {
                         move_target = Some(tile);
                     }
@@ -142,11 +174,6 @@ pub fn context_menu(
                 target: [tile.x, tile.y, tile.z],
             },
         )?;
-        close_menu = true;
-    }
-
-    if let Some(id) = attack_id {
-        engine_core::log_info!("attack player {id} not yet implemented");
         close_menu = true;
     }
 
@@ -227,6 +254,7 @@ pub fn add_player_colliders(
 pub fn click_to_move(
     input: Res<InputManager>,
     mut network: ResMut<NetworkClient>,
+    mut client_data: ResMut<ClientData>,
     window_manager: Res<WindowManager>,
     cameras: Query<(&Camera, &Transform, Entity), With<GameCamera>>,
     terrain: Res<TerrainMap>,
@@ -272,6 +300,8 @@ pub fn click_to_move(
     let Some(target) = terrain.0.tile_center(wx, wz) else {
         return Ok(());
     };
+
+    client_data.following_id = None;
 
     network.send(
         INPUT_CHANNEL,

@@ -1,0 +1,9 @@
+{
+  "name": "Dirt",
+  "namespace": "Apostasy",
+  "icon": "textures/dirt.png",
+  "components": {
+    "Stacks": false,
+    "Equipable": "Head"
+  }
+}

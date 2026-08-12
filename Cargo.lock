@@ -378,8 +378,10 @@ name = "client"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bincode",
  "engine_core",
  "game",
+ "game_data",
 ]
 
 [[package]]
@@ -963,7 +965,18 @@ dependencies = [
  "anyhow",
  "egui",
  "engine_core",
+ "game_data",
  "winit",
+]
+
+[[package]]
+name = "game_data"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "engine_core",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -2738,6 +2751,7 @@ dependencies = [
  "anyhow",
  "bincode",
  "engine_core",
+ "game_data",
  "nalgebra",
  "renet",
  "renet_netcode",
