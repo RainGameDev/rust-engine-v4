@@ -11,6 +11,8 @@ use engine_core::{
 };
 use game::{GameState, components::TempCamera};
 
+use crate::ui::settings::SettingsState;
+
 pub mod ui;
 
 fn main() -> anyhow::Result<()> {
@@ -22,6 +24,7 @@ pub fn init(commands: &mut Commands) -> Result<()> {
     // Init the game, runs funcitons ect ect ect
     commands.add_resource(game::init());
     commands.add_resource(GameState::MainMenu);
+    commands.add_resource(SettingsState::default());
 
     // make the main menu camera
     let menu_camera = commands.spawn();

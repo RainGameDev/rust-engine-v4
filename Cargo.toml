@@ -20,7 +20,7 @@ egui         = { git = "https://github.com/emilk/egui", branch = "main" }
 egui_extras = { git = "https://github.com/emilk/egui", branch = "main", features = ["all_loaders"] }
 egui-winit   = { git = "https://github.com/emilk/egui", branch = "main" }
 epaint       = { git = "https://github.com/emilk/egui", branch = "main" }
-egui-ash-renderer = {git = "https://github.com/RainGameDev/egui-ash-renderer", rev = "ec16f29aeec99ea17c90ce933d7e9a74fc3e7027", features = ["dynamic-rendering"]}
+egui-ash-renderer = {git = "https://github.com/RainGameDev/egui-ash-renderer",  features = ["dynamic-rendering"]}
 gltf = "1.4.1"
 hot-lib-reloader = "0.7"
 inventory = "0.3.24"

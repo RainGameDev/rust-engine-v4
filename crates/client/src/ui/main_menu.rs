@@ -9,6 +9,8 @@ use engine_core::{
 };
 use game::GameState;
 
+use crate::ui::settings::SettingsOpen;
+
 #[update]
 pub fn main_menu(
     context: ResMut<EguiContext>,
@@ -75,8 +77,12 @@ pub fn main_menu(
 
                 ui.add_space(20.0);
 
-                ui.add_sized(button_size, egui::Button::new("Settings"))
-                    .clicked();
+                if ui
+                    .add_sized(button_size, egui::Button::new("Settings"))
+                    .clicked()
+                {
+                    commands.add_resource(SettingsOpen);
+                }
 
                 ui.add_space(20.0);
 

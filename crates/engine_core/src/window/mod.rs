@@ -33,6 +33,7 @@ use crate::{
     rendering::{
         core::frame_info::update_camera_aspect_ratio,
         core::model::raw_mesh_to_gpu_mesh,
+        rendering_settings::RenderingSettings,
         vulkan::{RenderingInfo, VulkanRenderer},
     },
     tiles::TileMap,
@@ -208,6 +209,12 @@ impl ApplicationHandler for App {
 
                 self.tick_network(frame_delta).unwrap();
                 self.schedule.tick(&mut self.engine.ecs_world).unwrap();
+
+                if let Ok(settings) = self.engine.ecs_world.get_resource::<RenderingSettings>() {
+                    if *settings != renderer.settings {
+                        renderer.update_render_settings(settings.clone()).unwrap();
+                    }
+                }
 
                 if let Ok(mut input) = self.engine.ecs_world.get_resource_mut::<InputManager>() {
                     input.update();

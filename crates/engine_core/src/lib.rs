@@ -14,6 +14,7 @@ pub mod window;
 #[cfg(test)]
 mod tests;
 
+pub use ash;
 pub use egui;
 pub use inventory;
 pub use macros::{Component, Resource, component};

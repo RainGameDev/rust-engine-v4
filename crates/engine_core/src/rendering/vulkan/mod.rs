@@ -1,13 +1,16 @@
-use crate::rendering::{
-    core::frame_info::{FrameInfo, PushConstants, matrix_to_push_constant},
-    egui::renderer::UIRenderer,
-    rendering_settings::RenderingSettings,
-    vulkan::{
-        context::{RenderingContextAttributes, VulkanRenderingContext, depth_image_aspect},
-        frame::VulkanFrame,
-        image::ImageLayouts,
-        queue::queue_family_picker,
-        swapchain::VulkanSwapchain,
+use crate::{
+    log_debug,
+    rendering::{
+        core::frame_info::{FrameInfo, PushConstants, matrix_to_push_constant},
+        egui::renderer::UIRenderer,
+        rendering_settings::RenderingSettings,
+        vulkan::{
+            context::{RenderingContextAttributes, VulkanRenderingContext, depth_image_aspect},
+            frame::VulkanFrame,
+            image::ImageLayouts,
+            queue::queue_family_picker,
+            swapchain::VulkanSwapchain,
+        },
     },
 };
 use anyhow::Result;
@@ -83,11 +86,39 @@ const MAX_JOINTS: usize = 256;
 // TODO: replace with asset loader
 const SHADER_DIR: &str = "res/shaders/";
 fn load_shader_module(
-    context: &Arc<VulkanRenderingContext>,
+    context: &VulkanRenderingContext,
     path: &str,
 ) -> Result<ash::vk::ShaderModule> {
     let code = fs::read(format!("{SHADER_DIR}{path}"))?;
     Ok(context.create_shader_module(&code)?)
+}
+
+fn create_graphics_pipeline(
+    context: &VulkanRenderingContext,
+    pipeline_layout: vk::PipelineLayout,
+    swapchain: &VulkanSwapchain,
+    settings: &RenderingSettings,
+) -> Result<vk::Pipeline> {
+    let vertex_shader = load_shader_module(context, &settings.default_vertex_shader)?;
+    let fragment_shader = load_shader_module(context, &settings.default_fragment_shader)?;
+
+    log_debug!("Creating Graphics Pipeline");
+    let pipeline = context.create_graphics_pipeline(
+        vertex_shader,
+        fragment_shader,
+        swapchain.extent,
+        swapchain.format,
+        pipeline_layout,
+        swapchain.depth.format,
+        settings.rasterization_settings,
+        settings.depth_settings,
+    )?;
+
+    unsafe {
+        context.device.destroy_shader_module(vertex_shader, None);
+        context.device.destroy_shader_module(fragment_shader, None);
+    }
+    Ok(pipeline)
 }
 
 impl VulkanRenderer {
@@ -100,18 +131,9 @@ impl VulkanRenderer {
         // swapchain.resize()?;
 
         // TODO: Replace this with an asset loader
-        let vertex_shader = load_shader_module(
-            &rendering_info.context.clone().into(),
-            &settings.default_vertex_shader,
-        )?;
-        let fragment_shader = load_shader_module(
-            &rendering_info.context.clone().into(),
-            &settings.default_fragment_shader,
-        )?;
+        let context = rendering_info.context.clone();
 
         unsafe {
-            let context = rendering_info.context.clone();
-
             // Skinning: a storage buffer holding the per-entity joint matrices.
             let joint_binding = vk::DescriptorSetLayoutBinding::default()
                 .binding(0)
@@ -164,19 +186,8 @@ impl VulkanRenderer {
                 None,
             )?;
 
-            let pipeline = context.create_graphics_pipeline(
-                vertex_shader,
-                fragment_shader,
-                swapchain.extent,
-                swapchain.format,
-                pipeline_layout,
-                swapchain.depth.format,
-                settings.rasterization_settings,
-                settings.depth_settings,
-            )?;
-
-            context.device.destroy_shader_module(vertex_shader, None);
-            context.device.destroy_shader_module(fragment_shader, None);
+            let pipeline =
+                create_graphics_pipeline(&context, pipeline_layout, &swapchain, &settings)?;
 
             let command_pool = context.device.create_command_pool(
                 &ash::vk::CommandPoolCreateInfo::default()
@@ -211,7 +222,12 @@ impl VulkanRenderer {
                 });
             }
 
-            let ui_renderer = UIRenderer::new(context.clone(), &swapchain, rendering_info.window)?;
+            let ui_renderer = UIRenderer::new(
+                context.clone(),
+                &swapchain,
+                rendering_info.window,
+                settings.image_settings,
+            )?;
             let renderer = VulkanRenderer {
                 in_flight_frames_count,
                 current_frame: 0,
@@ -418,6 +434,46 @@ impl VulkanRenderer {
         Ok(())
     }
     pub fn update_command_buffer(&mut self) {}
+
+    /// Applies new render settings, rebuilding the pipeline or updating sampler
+    /// options where the corresponding settings have changed.
+    pub fn update_render_settings(
+        &mut self,
+        new_settings: RenderingSettings,
+    ) -> anyhow::Result<()> {
+        let image_changed = new_settings.image_settings != self.settings.image_settings;
+        let pipeline_changed = new_settings.depth_settings != self.settings.depth_settings
+            || new_settings.rasterization_settings != self.settings.rasterization_settings
+            || new_settings.default_vertex_shader != self.settings.default_vertex_shader
+            || new_settings.default_fragment_shader != self.settings.default_fragment_shader;
+
+        self.settings = new_settings;
+
+        if image_changed {
+            self.ui_renderer
+                .update_sampler_options(self.settings.image_settings);
+        }
+        if pipeline_changed {
+            self.recreate_pipeline()?;
+        }
+        Ok(())
+    }
+
+    /// Rebuilds the graphics pipeline from the current render settings.
+    pub fn recreate_pipeline(&mut self) -> anyhow::Result<()> {
+        unsafe {
+            // Make sure no in-flight work references the old pipeline.
+            self.context.device.device_wait_idle()?;
+            self.context.device.destroy_pipeline(self.pipeline, None);
+        }
+        self.pipeline = create_graphics_pipeline(
+            &self.context,
+            self.pipeline_layout,
+            &self.swapchain,
+            &self.settings,
+        )?;
+        Ok(())
+    }
 
     pub fn recreate_swapchain(&mut self) {}
 
