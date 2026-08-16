@@ -208,6 +208,12 @@ pub fn settings_menu(
         .style_mut_of(engine_core::egui::Theme::Dark, |style| {
             style.interaction.selectable_labels = false;
             style.interaction.multi_widget_text_select = false;
+            style.visuals.window_fill = WINDOW_FILL;
+            style.visuals.window_stroke = Stroke::new(1.0, BORDER);
+            style.visuals.widgets.noninteractive.fg_stroke = Stroke::new(1.0, GOLD_DIM);
+            style.visuals.widgets.noninteractive.weak_bg_fill = PANEL_FILL;
+            style.visuals.widgets.hovered.fg_stroke = Stroke::new(1.0, GOLD);
+            style.override_font_id = Some(egui::FontId::proportional(UI_FONT_SIZE - 6.0));
         });
     context
         .0
@@ -416,7 +422,10 @@ pub fn render_settings_tab(
             ui.horizontal(|ui| {
                 ui.label("Depth Test Enabled");
                 ui.checkbox(&mut render_settings.depth_settings.depth_test_enabled, "")
-            });
+            })
+            .response
+            .on_hover_text("Determines if depth testing is enabled. Default: On");
+
             ui.horizontal(|ui| {
                 ui.label("Depth Compare Type");
                 ComboBox::from_id_salt("depth_compare_op")
@@ -466,7 +475,9 @@ pub fn render_settings_tab(
                             "Always",
                         );
                     });
-            });
+            })
+            .response
+            .on_hover_text("Determines how a face is considered past another. Default: Less");
         });
     }
 
@@ -498,7 +509,9 @@ pub fn render_settings_tab(
                             "Line",
                         );
                     });
-            });
+            })
+            .response
+            .on_hover_text("Determines how vertices are connected on a mesh. Default: Fill");
             ui.horizontal(|ui| {
                 ui.label("Cull Mode");
                 ComboBox::from_id_salt("cull_mode")
@@ -528,7 +541,9 @@ pub fn render_settings_tab(
                             "None",
                         );
                     });
-            });
+            })
+            .response
+            .on_hover_text("Determines what face is used for culling. Default: Back");
             ui.horizontal(|ui| {
                 ui.label("Front Face");
                 ComboBox::from_id_salt("front_face")
@@ -548,7 +563,11 @@ pub fn render_settings_tab(
                             "Counter clockwise",
                         );
                     });
-            });
+            })
+            .response
+            .on_hover_text(
+                "Determines what vertex order is used for culling. Default: Counter Clockwise",
+            );
 
             if render_settings.rasterization_settings.polygon_mode == PolygonMode::LINE {
                 ui.horizontal(|ui| {
@@ -557,7 +576,11 @@ pub fn render_settings_tab(
                         &mut render_settings.rasterization_settings.line_width,
                         0.1..=16.0,
                     ));
-                });
+                })
+                .response
+                .on_hover_text(
+                    "Determines how thick the lines are for the 'line' rendering mode. Default: 1.0",
+                );
             }
         });
     }
@@ -581,11 +604,16 @@ pub fn render_settings_tab(
                         "Nearest",
                     );
                 });
-        });
+        })
+        .response
+        .on_hover_text("Determines the filtering type for images and ui. Default: Linear");
+
         ui.horizontal(|ui| {
             ui.label("Anistropy Enabled");
             ui.checkbox(&mut render_settings.image_settings.anisotropy_enabled, "");
-        });
+        })
+        .response
+        .on_hover_text("Determines if Anistropy is enabled. Default: On");
 
         if render_settings.image_settings.anisotropy_enabled {
             ui.horizontal(|ui| {
@@ -618,7 +646,9 @@ pub fn render_settings_tab(
                             "16x",
                         );
                     });
-            });
+            })
+            .response
+            .on_hover_text("Determines how much anistropy is used. Default: 8x");
         }
     });
 
