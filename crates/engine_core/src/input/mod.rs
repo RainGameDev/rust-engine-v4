@@ -110,6 +110,9 @@ pub struct InputManager {
 
     actions: HashMap<String, ActionBinding>,
 
+    /// Every action the game has registered, in display order, with its default binding.
+    registered: Vec<RegisteredInput>,
+
     axis_pressed_threshold: f32,
 }
 
@@ -149,6 +152,7 @@ impl InputManager {
             touches: HashMap::new(),
             touch_just_started: false,
             actions: HashMap::new(),
+            registered: Vec::new(),
             axis_pressed_threshold: 0.5,
         }
     }
@@ -385,6 +389,22 @@ impl InputManager {
 
     // --- Action bindings ---
 
+    /// Records the list of actions the game supports and seeds their
+    /// default bindings for any action not already bound.
+    pub fn register_inputs(&mut self, inputs: Vec<RegisteredInput>) {
+        for input in &inputs {
+            self.actions
+                .entry(input.name.to_string())
+                .or_insert_with(|| input.default.clone());
+        }
+        self.registered = inputs;
+    }
+
+    /// Every registered action in display order, including ones currently unbound.
+    pub fn registered_inputs(&self) -> &[RegisteredInput] {
+        &self.registered
+    }
+
     /// Adds a binding for an action, replacing any previous binding.
     pub fn bind_action(&mut self, action: impl Into<String>, binding: ActionBinding) {
         self.actions.insert(action.into(), binding);
@@ -436,6 +456,11 @@ impl InputManager {
 
     pub fn has_action(&self, action: &str) -> bool {
         self.actions.contains_key(action)
+    }
+
+    /// The currently stored binding for an action, if any.
+    pub fn binding(&self, action: &str) -> Option<&ActionBinding> {
+        self.actions.get(action)
     }
 
     /// Returns the first input source that was pressed this frame, if any.
@@ -580,27 +605,14 @@ impl InputManager {
 
     fn source_value(&self, source: &InputSource) -> f32 {
         match source {
-            InputSource::Keyboard(key)
-                if self.keyboard_pressed.contains(key) => {
-                    1.0
-                }
-            InputSource::Mouse(button)
-                if self.mouse_buttons_pressed.contains(button) => {
-                    1.0
-                }
-            InputSource::GamepadButton(button)
-                if self.gamepad_buttons_pressed.contains(button) => {
-                    1.0
-                }
+            InputSource::Keyboard(key) if self.keyboard_pressed.contains(key) => 1.0,
+            InputSource::Mouse(button) if self.mouse_buttons_pressed.contains(button) => 1.0,
+            InputSource::GamepadButton(button) if self.gamepad_buttons_pressed.contains(button) => {
+                1.0
+            }
             InputSource::GamepadAxis(axis) => self.gamepad_axes.get(axis).copied().unwrap_or(0.0),
-            InputSource::MouseWheelUp
-                if self.scroll_delta > 0.0 => {
-                    1.0
-                }
-            InputSource::MouseWheelDown
-                if self.scroll_delta < 0.0 => {
-                    1.0
-                }
+            InputSource::MouseWheelUp if self.scroll_delta > 0.0 => 1.0,
+            InputSource::MouseWheelDown if self.scroll_delta < 0.0 => 1.0,
             InputSource::Touch => {
                 if self.touches.is_empty() {
                     0.0
@@ -701,4 +713,11 @@ impl InputManager {
     pub fn touch(&self, id: u64) -> Option<&TouchState> {
         self.touches.get(&id)
     }
+}
+
+/// A single action known to the game, with its default binding.
+#[derive(Debug, Clone)]
+pub struct RegisteredInput {
+    pub name: &'static str,
+    pub default: ActionBinding,
 }

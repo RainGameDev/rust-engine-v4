@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::path::PathBuf;
 
 use anyhow::Result;
@@ -7,7 +6,8 @@ use engine_core::{
     ash::vk::{CompareOp, CullModeFlags, Filter, FrontFace, PolygonMode},
     ecs::systems::param::{Res, ResMut},
     egui::{
-        Button, Color32, ComboBox, Frame, Grid, Margin, RichText, Slider, Stroke, Ui, Vec2, Window,
+        self, Button, Color32, ComboBox, Frame, Grid, Margin, RichText, Sense, Slider, Stroke, Ui,
+        Vec2, Window,
     },
     input::{
         InputManager,
@@ -28,57 +28,142 @@ use winit::keyboard::{KeyCode, PhysicalKey};
 
 use engine_core::egui::Response;
 
-const TAB_BAR_FILL: Color32 = Color32::from_rgb(16, 16, 20);
-const TAB_ACTIVE_FILL: Color32 = Color32::from_rgb(52, 96, 168);
-const TAB_INACTIVE_FILL: Color32 = Color32::from_rgb(34, 34, 40);
-const TAB_ACTIVE_BORDER: Color32 = Color32::from_rgb(120, 160, 220);
-const BUTTON_FILL: Color32 = Color32::from_rgb(40, 40, 46);
-const BORDER: Color32 = Color32::from_rgb(88, 88, 98);
-const KEY_FILL: Color32 = Color32::from_rgb(38, 38, 44);
+const GOLD: Color32 = Color32::from_rgb(228, 186, 94);
+const GOLD_BRIGHT: Color32 = Color32::from_rgb(255, 226, 170);
+const GOLD_DIM: Color32 = Color32::from_rgb(150, 124, 74);
+const TEXT_SHADOW: Color32 = Color32::from_rgba_unmultiplied_const(10, 8, 2, 210);
+const WINDOW_FILL: Color32 = Color32::from_rgba_unmultiplied_const(14, 12, 8, 235);
+const PANEL_FILL: Color32 = Color32::from_rgb(22, 19, 13);
+const BORDER: Color32 = Color32::from_rgb(120, 100, 60);
+const KEY_FILL: Color32 = Color32::from_rgb(30, 26, 18);
 const KEY_ACTIVE_FILL: Color32 = Color32::from_rgb(58, 50, 24);
-const KEY_ACTIVE_BORDER: Color32 = Color32::from_rgb(210, 175, 60);
-const TEXT_MUTED: Color32 = Color32::from_gray(170);
+const KEY_ACTIVE_BORDER: Color32 = GOLD;
+const TEXT_MUTED: Color32 = GOLD_DIM;
+const UI_FONT_SIZE: f32 = 28.0;
 
-fn tab_button(ui: &mut Ui, text: &str, selected: bool, width: f32) -> Response {
-    let (fill, stroke, text_color) = if selected {
-        (
-            TAB_ACTIVE_FILL,
-            Stroke::new(1.0, TAB_ACTIVE_BORDER),
-            Color32::WHITE,
-        )
-    } else {
-        (TAB_INACTIVE_FILL, Stroke::new(1.0, BORDER), TEXT_MUTED)
-    };
-    ui.add(
-        Button::new(RichText::new(text).color(text_color))
-            .fill(fill)
-            .stroke(stroke)
-            .min_size(Vec2::new(width, 26.0))
-            .corner_radius(4),
-    )
+fn text_galley(ui: &Ui, text: &str, size: f32) -> std::sync::Arc<egui::Galley> {
+    ui.ctx().fonts_mut(|f| {
+        f.layout_job(egui::text::LayoutJob::simple(
+            text.to_owned(),
+            egui::FontId::proportional(size),
+            Color32::PLACEHOLDER,
+            f32::INFINITY,
+        ))
+    })
 }
 
-fn bordered_button(ui: &mut Ui, text: &str, width: f32) -> Response {
-    ui.add(
-        Button::new(RichText::new(text).color(Color32::from_gray(210)))
-            .fill(BUTTON_FILL)
-            .stroke(Stroke::new(1.0, BORDER))
-            .min_size(Vec2::new(width, 26.0))
-            .corner_radius(4),
-    )
+fn shadowed_text(ui: &mut Ui, text: &str, size: f32, color: Color32) {
+    let galley = text_galley(ui, text, size);
+    let (rect, _) = ui.allocate_exact_size(galley.size(), Sense::hover());
+    let pos = rect.min;
+    ui.painter()
+        .galley(pos + Vec2::new(2.0, 3.0), galley.clone(), TEXT_SHADOW);
+    ui.painter().galley(pos, galley, color);
+}
+
+fn centered_shadowed_text(ui: &mut Ui, text: &str, size: f32, color: Color32) {
+    let galley = text_galley(ui, text, size);
+    let size = Vec2::new(ui.available_width(), galley.size().y);
+    let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
+    let pos = rect.min + (rect.size() - galley.size()) / 2.0;
+    ui.painter()
+        .galley(pos + Vec2::new(2.0, 3.0), galley.clone(), TEXT_SHADOW);
+    ui.painter().galley(pos, galley, color);
+}
+
+fn indented_section(ui: &mut Ui, id_salt: &str, label: &str, add_contents: impl FnOnce(&mut Ui)) {
+    ui.label(label);
+    ui.indent(id_salt, |ui| {
+        let style = ui.style_mut();
+        style.override_font_id = Some(egui::FontId::proportional(UI_FONT_SIZE - 2.0));
+        add_contents(ui);
+    });
+}
+
+fn gold_popup_style() -> egui::style::StyleModifier {
+    egui::style::StyleModifier::new(|style| {
+        style.override_font_id = Some(egui::FontId::proportional(UI_FONT_SIZE - 2.0));
+        style.spacing.button_padding = egui::Vec2::new(2.0, 0.0);
+        style.visuals.widgets.noninteractive.fg_stroke = Stroke::new(1.0, GOLD_DIM);
+        style.visuals.widgets.inactive.fg_stroke = Stroke::new(1.0, GOLD);
+        style.visuals.widgets.hovered.fg_stroke = Stroke::new(1.0, GOLD_BRIGHT);
+        style.visuals.widgets.active.fg_stroke = Stroke::new(1.0, GOLD_BRIGHT);
+        style.visuals.widgets.hovered.weak_bg_fill =
+            Color32::from_rgba_unmultiplied(228, 186, 94, 28);
+        style.visuals.widgets.active.weak_bg_fill =
+            Color32::from_rgba_unmultiplied(228, 186, 94, 48);
+        style.visuals.widgets.hovered.bg_stroke = Stroke::NONE;
+        style.visuals.widgets.active.bg_stroke = Stroke::NONE;
+        style.visuals.widgets.open.bg_stroke = Stroke::NONE;
+        style.visuals.widgets.inactive.weak_bg_fill = Color32::TRANSPARENT;
+        style.visuals.widgets.inactive.bg_stroke = Stroke::NONE;
+        style.visuals.selection.bg_fill = Color32::from_rgba_unmultiplied(228, 186, 94, 64);
+        style.visuals.selection.stroke = Stroke::new(1.0, GOLD);
+        style.visuals.window_fill = WINDOW_FILL;
+        style.visuals.window_stroke = Stroke::new(1.0, BORDER);
+    })
+}
+
+fn tab_button(ui: &mut Ui, text: &str, selected: bool, width: f32) -> Response {
+    let galley = text_galley(ui, text, UI_FONT_SIZE);
+    let (rect, response) = ui.allocate_exact_size(Vec2::new(width, 40.0), Sense::click());
+    let text_pos = rect.center() - galley.size() / 2.0;
+
+    ui.painter()
+        .galley(text_pos + Vec2::new(2.0, 3.0), galley.clone(), TEXT_SHADOW);
+
+    let color = if selected {
+        GOLD_BRIGHT
+    } else if response.hovered() {
+        GOLD
+    } else {
+        GOLD_DIM
+    };
+    ui.painter().galley(text_pos, galley, color);
+
+    if selected {
+        let y = rect.bottom() - 3.0;
+        ui.painter().line_segment(
+            [
+                egui::pos2(rect.min.x + 6.0, y),
+                egui::pos2(rect.max.x - 6.0, y),
+            ],
+            Stroke::new(2.0, GOLD),
+        );
+    }
+
+    response
+}
+
+fn menu_text_button(ui: &mut Ui, text: &str, width: f32) -> Response {
+    let galley = text_galley(ui, text, UI_FONT_SIZE);
+    let (rect, response) = ui.allocate_exact_size(Vec2::new(width, 40.0), Sense::click());
+    let text_pos = rect.center() - galley.size() / 2.0;
+
+    ui.painter()
+        .galley(text_pos + Vec2::new(2.0, 3.0), galley.clone(), TEXT_SHADOW);
+
+    let color = if response.hovered() {
+        GOLD_BRIGHT
+    } else {
+        GOLD
+    };
+    ui.painter().galley(text_pos, galley, color);
+
+    response
 }
 
 /// Key "cap" button that shows the currently bound source and starts capture on click.
 fn key_cap(ui: &mut Ui, text: &str, rebinding: bool, width: f32) -> Response {
     ui.add(
-        Button::new(RichText::new(text).color(Color32::from_gray(225)))
+        Button::new(RichText::new(text).color(if rebinding { GOLD_BRIGHT } else { GOLD_DIM }))
             .fill(if rebinding { KEY_ACTIVE_FILL } else { KEY_FILL })
             .stroke(if rebinding {
                 Stroke::new(1.5, KEY_ACTIVE_BORDER)
             } else {
                 Stroke::new(1.0, BORDER)
             })
-            .min_size(Vec2::new(width, 24.0))
+            .min_size(Vec2::new(width, 36.0))
             .corner_radius(4),
     )
 }
@@ -103,50 +188,6 @@ pub struct SettingsState {
     pub rebinding_skip_frame: bool,
 }
 
-/// Default keybindings, used both to register on startup and to reset.
-pub fn default_bindings() -> HashMap<String, ActionBinding> {
-    let mut bindings = HashMap::new();
-    bindings.insert(
-        "Move Forward".to_string(),
-        ActionBinding::button(InputSource::Keyboard(PhysicalKey::Code(KeyCode::KeyW))),
-    );
-    bindings.insert(
-        "Move Backward".to_string(),
-        ActionBinding::button(InputSource::Keyboard(PhysicalKey::Code(KeyCode::KeyS))),
-    );
-    bindings.insert(
-        "Move Left".to_string(),
-        ActionBinding::button(InputSource::Keyboard(PhysicalKey::Code(KeyCode::KeyA))),
-    );
-    bindings.insert(
-        "Move Right".to_string(),
-        ActionBinding::button(InputSource::Keyboard(PhysicalKey::Code(KeyCode::KeyD))),
-    );
-    bindings.insert(
-        "Jump".to_string(),
-        ActionBinding::button(InputSource::Keyboard(PhysicalKey::Code(KeyCode::Space))),
-    );
-    bindings.insert(
-        "Sprint".to_string(),
-        ActionBinding::button(InputSource::Keyboard(PhysicalKey::Code(KeyCode::ShiftLeft))),
-    );
-    bindings.insert(
-        "Crouch".to_string(),
-        ActionBinding::button(InputSource::Keyboard(PhysicalKey::Code(
-            KeyCode::ControlLeft,
-        ))),
-    );
-    bindings.insert(
-        "Interact".to_string(),
-        ActionBinding::button(InputSource::Keyboard(PhysicalKey::Code(KeyCode::KeyE))),
-    );
-    bindings.insert(
-        "Pause".to_string(),
-        ActionBinding::button(InputSource::Keyboard(PhysicalKey::Code(KeyCode::Escape))),
-    );
-    bindings
-}
-
 /// File bindings are persisted to. Currently just the working directory.
 pub fn bindings_path() -> PathBuf {
     std::env::current_dir()
@@ -162,34 +203,65 @@ pub fn settings_menu(
     mut input: ResMut<InputManager>,
     mut state: ResMut<SettingsState>,
 ) -> Result<()> {
-    context.0.style_mut_of(engine_core::egui::Theme::Dark, |style| {
-        style.interaction.selectable_labels = false;
-        style.interaction.multi_widget_text_select = false;
-    });
-    context.0.style_mut_of(engine_core::egui::Theme::Light, |style| {
-        style.interaction.selectable_labels = false;
-        style.interaction.multi_widget_text_select = false;
-    });
+    context
+        .0
+        .style_mut_of(engine_core::egui::Theme::Dark, |style| {
+            style.interaction.selectable_labels = false;
+            style.interaction.multi_widget_text_select = false;
+        });
+    context
+        .0
+        .style_mut_of(engine_core::egui::Theme::Light, |style| {
+            style.interaction.selectable_labels = false;
+            style.interaction.multi_widget_text_select = false;
+        });
 
     Window::new("Settings")
         .title_bar(false)
         .default_width(360.0)
-        .frame(Frame {
-            inner_margin: Margin::same(4),
-
-            fill: Color32::from_rgba_unmultiplied(20, 20, 20, 255),
-            ..Default::default()
-        })
+        .frame(
+            Frame::new()
+                .inner_margin(Margin::same(6))
+                .fill(WINDOW_FILL)
+                .stroke(Stroke::new(2.0, GOLD)),
+        )
         .show(&context.0, |ui| {
-            ui.separator();
-            ui.checkbox(&mut state.advanced_on, "Advanced Settings");
+            {
+                let style = ui.style_mut();
+                style.visuals.widgets.noninteractive.fg_stroke = Stroke::new(1.0, GOLD_DIM);
+                style.visuals.widgets.inactive.fg_stroke = Stroke::new(1.0, GOLD);
+                style.visuals.widgets.hovered.fg_stroke = Stroke::new(1.0, GOLD_BRIGHT);
+                style.visuals.widgets.active.fg_stroke = Stroke::new(1.0, GOLD_BRIGHT);
+                style.visuals.widgets.inactive.weak_bg_fill = PANEL_FILL;
+                style.visuals.widgets.hovered.weak_bg_fill =
+                    Color32::from_rgba_unmultiplied(228, 186, 94, 28);
+                style.visuals.widgets.active.weak_bg_fill =
+                    Color32::from_rgba_unmultiplied(228, 186, 94, 48);
+                style.visuals.widgets.inactive.bg_stroke = Stroke::new(1.0, BORDER);
+                style.visuals.widgets.hovered.bg_stroke = Stroke::new(1.0, GOLD_DIM);
+                style.visuals.selection.bg_fill = Color32::from_rgba_unmultiplied(228, 186, 94, 64);
+                style.visuals.selection.stroke = Stroke::new(1.0, GOLD);
+                style.visuals.hyperlink_color = GOLD;
+                style.visuals.window_fill = WINDOW_FILL;
+                style.visuals.window_stroke = Stroke::new(1.0, BORDER);
+                style.override_font_id = Some(egui::FontId::proportional(UI_FONT_SIZE));
+            }
 
-            ui.separator();
+            centered_shadowed_text(ui, "SETTINGS", 36.0, GOLD);
+            ui.painter().line_segment(
+                [
+                    egui::pos2(ui.cursor().left() + 4.0, ui.cursor().top() + 4.0),
+                    egui::pos2(ui.cursor().right() - 4.0, ui.cursor().top() + 4.0),
+                ],
+                Stroke::new(2.0, Color32::from_rgba_unmultiplied(228, 186, 94, 180)),
+            );
+            ui.add_space(8.0);
 
             Frame::new()
-                .fill(TAB_BAR_FILL)
+                .fill(PANEL_FILL)
                 .corner_radius(4)
-                .inner_margin(Margin::same(3))
+                .fill(Color32::TRANSPARENT)
+                .inner_margin(Margin::symmetric(6, 2))
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
                         let width = (ui.available_width() - ui.spacing().item_spacing.x) / 2.0;
@@ -205,6 +277,15 @@ pub fn settings_menu(
                         }
                     });
                 });
+
+            ui.add_space(8.0);
+
+            ui.checkbox(
+                &mut state.advanced_on,
+                RichText::new("Advanced Settings").color(GOLD_DIM),
+            );
+
+            ui.add_space(6.0);
 
             match state.tab {
                 SettingsTab::Rendering => {
@@ -223,25 +304,25 @@ pub fn settings_menu(
 
 pub fn input_settings_tab(ui: &mut Ui, input: &mut InputManager, state: &mut SettingsState) {
     ui.add_space(6.0);
-    ui.label(
-        RichText::new("Keybindings")
-            .strong()
-            .size(15.0)
-            .color(Color32::WHITE),
-    );
-    ui.add_space(4.0);
+    shadowed_text(ui, "Keybindings", UI_FONT_SIZE, GOLD);
+    ui.add_space(6.0);
 
     ui.horizontal(|ui| {
         let width = (ui.available_width() - ui.spacing().item_spacing.x) / 2.0;
-        if bordered_button(ui, "Save", width).clicked() {
+        if menu_text_button(ui, "Save", width).clicked() {
             let path = bindings_path();
             match std::fs::write(&path, input.save_bindings()) {
                 Ok(()) => log_info!("Saved bindings to {}", path.display()),
                 Err(err) => log_error!(reason: "failed to save bindings", "{err}"),
             }
         }
-        if bordered_button(ui, "Reset to Defaults", width).clicked() {
-            for (name, binding) in default_bindings() {
+        if menu_text_button(ui, "Reset to Defaults", width).clicked() {
+            let registered: Vec<(String, ActionBinding)> = input
+                .registered_inputs()
+                .iter()
+                .map(|r| (r.name.to_string(), r.default.clone()))
+                .collect();
+            for (name, binding) in registered {
                 input.bind_action(name, binding);
             }
             state.rebinding = None;
@@ -251,8 +332,15 @@ pub fn input_settings_tab(ui: &mut Ui, input: &mut InputManager, state: &mut Set
     ui.add_space(8.0);
 
     let actions: Vec<(String, ActionBinding)> = input
-        .actions()
-        .map(|(name, binding)| (name.clone(), binding.clone()))
+        .registered_inputs()
+        .iter()
+        .map(|registered| {
+            let binding = input
+                .binding(registered.name)
+                .cloned()
+                .unwrap_or_else(|| registered.default.clone());
+            (registered.name.to_string(), binding)
+        })
         .collect();
 
     Grid::new("input_binding_grid")
@@ -279,10 +367,10 @@ pub fn input_settings_tab(ui: &mut Ui, input: &mut InputManager, state: &mut Set
                 let key_clicked = key_cap(ui, &key_text, is_rebinding, 130.0).clicked();
                 let clear_clicked = ui
                     .add(
-                        Button::new(RichText::new("X").color(Color32::from_gray(150)))
+                        Button::new(RichText::new("X").color(GOLD_DIM))
                             .fill(Color32::TRANSPARENT)
                             .stroke(Stroke::new(1.0, BORDER))
-                            .min_size(Vec2::new(22.0, 24.0))
+                            .min_size(Vec2::new(30.0, 36.0))
                             .corner_radius(4),
                     )
                     .on_hover_text("Unbind")
@@ -324,9 +412,7 @@ pub fn render_settings_tab(
 ) {
     if is_advanced {
         ui.separator();
-        ui.label("Depth");
-
-        ui.indent("DepthIndent", |ui| {
+        indented_section(ui, "DepthIndent", "Depth", |ui| {
             ui.horizontal(|ui| {
                 ui.label("Depth Test Enabled");
                 ui.checkbox(&mut render_settings.depth_settings.depth_test_enabled, "")
@@ -334,6 +420,7 @@ pub fn render_settings_tab(
             ui.horizontal(|ui| {
                 ui.label("Depth Compare Type");
                 ComboBox::from_id_salt("depth_compare_op")
+                    .popup_style(gold_popup_style())
                     .selected_text(compare_op_to_string(
                         render_settings.depth_settings.depth_compare_op,
                     ))
@@ -386,12 +473,11 @@ pub fn render_settings_tab(
     ui.separator();
 
     if is_advanced {
-        ui.label("Raster");
-
-        ui.indent("RasterIndent", |ui| {
+        indented_section(ui, "RasterIndent", "Raster", |ui| {
             ui.horizontal(|ui| {
                 ui.label("Polygon Mode");
                 ComboBox::from_id_salt("polygon_mode")
+                    .popup_style(gold_popup_style())
                     .selected_text(polygon_mode_to_string(
                         render_settings.rasterization_settings.polygon_mode,
                     ))
@@ -416,6 +502,7 @@ pub fn render_settings_tab(
             ui.horizontal(|ui| {
                 ui.label("Cull Mode");
                 ComboBox::from_id_salt("cull_mode")
+                    .popup_style(gold_popup_style())
                     .selected_text(cull_mode_to_string(
                         render_settings.rasterization_settings.cull_mode,
                     ))
@@ -445,6 +532,7 @@ pub fn render_settings_tab(
             ui.horizontal(|ui| {
                 ui.label("Front Face");
                 ComboBox::from_id_salt("front_face")
+                    .popup_style(gold_popup_style())
                     .selected_text(front_face_to_string(
                         render_settings.rasterization_settings.front_face,
                     ))
@@ -475,12 +563,11 @@ pub fn render_settings_tab(
     }
 
     ui.separator();
-    ui.label("Image");
-
-    ui.indent("ImageIndent", |ui| {
+    indented_section(ui, "ImageIndent", "Image", |ui| {
         ui.horizontal(|ui| {
             ui.label("Filter Mode");
             ComboBox::from_id_salt("filter_mode")
+                .popup_style(gold_popup_style())
                 .selected_text(filter_to_string(render_settings.image_settings.filter_mode))
                 .show_ui(ui, |ui| {
                     ui.selectable_value(
@@ -504,6 +591,7 @@ pub fn render_settings_tab(
             ui.horizontal(|ui| {
                 ui.label("Anistropy Amount");
                 ComboBox::from_id_salt("anisotropy_amount")
+                    .popup_style(gold_popup_style())
                     .selected_text(format!(
                         "{}x",
                         render_settings.image_settings.anisotropy_amount

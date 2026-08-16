@@ -8,12 +8,16 @@ use engine_core::{
         },
         systems::param::ResMut,
     },
-    init_core, log_error, start,
+    init_core, log_error,
+    rendering::egui::{context::EguiContext, fonts::FontRegistry},
+    start, update,
 };
 use game::{GameState, components::TempCamera};
 
-use crate::ui::settings::{SettingsState, bindings_path, default_bindings};
+use crate::bindings::registered_inputs;
+use crate::ui::settings::{SettingsState, bindings_path};
 
+pub mod bindings;
 pub mod ui;
 
 fn main() -> anyhow::Result<()> {
@@ -21,10 +25,10 @@ fn main() -> anyhow::Result<()> {
 }
 
 #[start]
-pub fn register_default_bindings(mut input: ResMut<engine_core::input::InputManager>) -> Result<()> {
-    for (name, binding) in default_bindings() {
-        input.bind_action(name, binding);
-    }
+pub fn register_default_bindings(
+    mut input: ResMut<engine_core::input::InputManager>,
+) -> Result<()> {
+    input.register_inputs(registered_inputs());
 
     let path = bindings_path();
     if path.exists() {
@@ -50,6 +54,14 @@ pub fn init(commands: &mut Commands) -> Result<()> {
     commands.add_resource(GameState::MainMenu);
     commands.add_resource(SettingsState::default());
 
+    let mut fonts = FontRegistry::default();
+    fonts.load_dir(std::path::Path::new(&format!(
+        "{}/{}",
+        env!("CARGO_MANIFEST_DIR"),
+        "res/fonts/"
+    )));
+    commands.add_resource(fonts);
+
     // make the main menu camera
     let menu_camera = commands.spawn();
     commands.add_component(menu_camera, Transform::default());
@@ -57,5 +69,11 @@ pub fn init(commands: &mut Commands) -> Result<()> {
     commands.add_component(menu_camera, GameCamera);
     commands.add_component(menu_camera, Camera::perspective(90.0, 1.0, 0.001, 1000.0));
 
+    Ok(())
+}
+
+#[update]
+pub fn apply_fonts(mut fonts: ResMut<FontRegistry>, context: ResMut<EguiContext>) -> Result<()> {
+    fonts.apply_if_needed(&context.0);
     Ok(())
 }

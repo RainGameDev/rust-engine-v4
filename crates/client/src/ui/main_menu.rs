@@ -1,9 +1,7 @@
 use anyhow::Result;
 use engine_core::{
     ecs::{commands::Commands, systems::param::ResMut},
-    egui::{
-        self, Align, Align2, Color32, Frame, Layout, Margin, Stroke, Vec2, Window, accesskit::Color,
-    },
+    egui::{self, Align, Align2, Color32, Frame, Layout, Stroke, Vec2, Window},
     log_info,
     rendering::egui::context::EguiContext,
     update,
@@ -44,7 +42,7 @@ pub fn main_menu(
     });
     let title = "APOSTASY";
     let gold = Color32::from_rgb(228, 186, 94);
-    let font = egui::FontId::proportional(46.0);
+    let font = egui::FontId::proportional(50.0);
 
     let galley = context.0.fonts_mut(|f| {
         f.layout_job(egui::text::LayoutJob::simple(
@@ -102,7 +100,7 @@ pub fn main_menu(
                     let galley = ui.ctx().fonts_mut(|f| {
                         f.layout_job(egui::text::LayoutJob::simple(
                             label.to_owned(),
-                            egui::FontId::proportional(26.0),
+                            egui::FontId::proportional(30.0),
                             Color32::PLACEHOLDER,
                             f32::INFINITY,
                         ))
