@@ -15,4 +15,5 @@ game = { path = "../game" }
 game_data = { path = "../game_data" }
 image.workspace = true
 bincode.workspace = true
+winit.workspace = true
 

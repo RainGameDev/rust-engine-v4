@@ -438,6 +438,44 @@ impl InputManager {
         self.actions.contains_key(action)
     }
 
+    /// Returns the first input source that was pressed this frame, if any.
+    /// Useful for capture-style keybinding UIs ("press any key").
+    pub fn any_source_just_pressed(&self) -> Option<InputSource> {
+        self.keyboard_just_pressed
+            .iter()
+            .next()
+            .map(|key| InputSource::Keyboard(*key))
+            .or_else(|| {
+                self.mouse_buttons_just_pressed
+                    .iter()
+                    .next()
+                    .map(|button| InputSource::Mouse(*button))
+            })
+            .or_else(|| {
+                self.gamepad_buttons_just_pressed
+                    .iter()
+                    .next()
+                    .map(|button| InputSource::GamepadButton(*button))
+            })
+            .or_else(|| {
+                self.gamepad_axis_just_pressed
+                    .iter()
+                    .next()
+                    .map(|axis| InputSource::GamepadAxis(*axis))
+            })
+            .or({
+                if self.touch_just_started {
+                    Some(InputSource::Touch)
+                } else if self.scroll_delta > 0.0 {
+                    Some(InputSource::MouseWheelUp)
+                } else if self.scroll_delta < 0.0 {
+                    Some(InputSource::MouseWheelDown)
+                } else {
+                    None
+                }
+            })
+    }
+
     pub fn actions(&self) -> impl Iterator<Item = (&String, &ActionBinding)> {
         self.actions.iter()
     }

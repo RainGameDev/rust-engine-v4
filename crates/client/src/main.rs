@@ -6,17 +6,41 @@ use engine_core::{
             camera::{Camera, GameCamera},
             transform::Transform,
         },
+        systems::param::ResMut,
     },
-    init_core, start,
+    init_core, log_error, start,
 };
 use game::{GameState, components::TempCamera};
 
-use crate::ui::settings::SettingsState;
+use crate::ui::settings::{SettingsState, bindings_path, default_bindings};
 
 pub mod ui;
 
 fn main() -> anyhow::Result<()> {
     init_core(None)
+}
+
+#[start]
+pub fn register_default_bindings(mut input: ResMut<engine_core::input::InputManager>) -> Result<()> {
+    for (name, binding) in default_bindings() {
+        input.bind_action(name, binding);
+    }
+
+    let path = bindings_path();
+    if path.exists() {
+        match std::fs::read(&path) {
+            Ok(bytes) => {
+                if let Err(err) = input.load_bindings(&bytes) {
+                    log_error!(reason: "failed to load bindings", "{err}");
+                }
+            }
+            Err(err) => {
+                log_error!(reason: "failed to read bindings file", "{err}");
+            }
+        }
+    }
+
+    Ok(())
 }
 
 #[start]

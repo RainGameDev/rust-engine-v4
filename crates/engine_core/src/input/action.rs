@@ -27,6 +27,39 @@ impl InputSource {
     pub fn is_axis(&self) -> bool {
         matches!(self, InputSource::GamepadAxis(_))
     }
+
+    /// Human readable name for the source, used in keybinding menus.
+    pub fn display(&self) -> String {
+        match self {
+            InputSource::Noop => "None".to_string(),
+            InputSource::Keyboard(key) => physical_key_name(*key),
+            InputSource::Mouse(button) => format!("Mouse {button:?}"),
+            InputSource::GamepadButton(button) => format!("Gamepad {button:?}"),
+            InputSource::GamepadAxis(axis) => format!("Gamepad {axis:?}"),
+            InputSource::MouseWheelUp => "Mouse Wheel Up".to_string(),
+            InputSource::MouseWheelDown => "Mouse Wheel Down".to_string(),
+            InputSource::Touch => "Touch".to_string(),
+        }
+    }
+}
+
+/// Formats a [`PhysicalKey`] into a short readable name.
+fn physical_key_name(key: PhysicalKey) -> String {
+    match key {
+        PhysicalKey::Code(code) => {
+            let debug = format!("{code:?}");
+            if let Some(name) = debug.strip_prefix("Key") {
+                name.to_string()
+            } else if let Some(digit) = debug.strip_prefix("Digit") {
+                digit.to_string()
+            } else if let Some(numpad) = debug.strip_prefix("Numpad") {
+                format!("Num {numpad}")
+            } else {
+                debug
+            }
+        }
+        PhysicalKey::Unidentified(_) => "Unknown Key".to_string(),
+    }
 }
 
 /// Mirrors [`gilrs::Button`] but is serializable.

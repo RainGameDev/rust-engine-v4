@@ -503,6 +503,7 @@ dependencies = [
  "game",
  "game_data",
  "image",
+ "winit",
 ]
 
 [[package]]
