@@ -1,0 +1,19 @@
+[package]
+name = "client_2d"
+version = "0.1.0"
+edition.workspace = true
+
+
+[[bin]]
+name = "client_2d"
+path = "src/main.rs"
+
+[dependencies]
+engine_core = { path = "../engine_core" }
+anyhow.workspace = true
+game_2d = { path = "../game_2d" }
+game_data = { path = "../game_data" }
+image.workspace = true
+bincode.workspace = true
+winit.workspace = true
+
