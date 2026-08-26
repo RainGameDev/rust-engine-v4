@@ -16,27 +16,30 @@ use winit::{
 
 use crate::{
     Engine,
+    assets::models::{animation::SkinnedMesh, gltf::load_gltf_file},
     ecs::{
-        components::engine_components::{model_renderer::ModelRenderer, transform::Transform},
+        components::engine_components::{
+            model_renderer::ModelRenderer, sprite::Sprite, transform::Transform,
+        },
         query::query::Query,
         systems::{StartSystem, run_system, scheduler::Schedule},
     },
     input::InputManager,
-    log_error, log_info, log_warn,
+    log_debug, log_error, log_info, log_warn,
     networking::client::{NetworkClient, pump_network},
-    rendering::{core::frame_info::DrawInfo, egui::context::EguiContext},
-    utils::directory_check::load_directory,
-    window::window_manager::{MouseMode, WindowManager},
-};
-use crate::{
-    assets::models::{animation::SkinnedMesh, gltf::load_gltf_file},
     rendering::{
-        core::frame_info::update_camera_aspect_ratio,
-        core::model::raw_mesh_to_gpu_mesh,
+        core::{
+            frame_info::{DrawInfo, update_camera_aspect_ratio},
+            model::{GpuMesh, raw_mesh_to_gpu_mesh},
+            sprite::load_image_sprites,
+        },
+        egui::context::EguiContext,
         rendering_settings::RenderingSettings,
         vulkan::{RenderingInfo, VulkanRenderer},
     },
     tiles::TileMap,
+    utils::directory_check::load_directory,
+    window::window_manager::{MouseMode, WindowManager},
 };
 
 #[derive(Resource, Debug)]
@@ -73,23 +76,18 @@ impl App {
     fn tick_network(&mut self, delta: Duration) -> Result<()> {
         pump_network(&mut self.engine.ecs_world, delta)
     }
-}
-impl ApplicationHandler for App {
-    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        event_loop.listen_device_events(winit::event_loop::DeviceEvents::Always);
-        self.rendering_info = Some(RenderingInfo::new(event_loop));
-        self.renderer = Some(VulkanRenderer::new(self.rendering_info.clone().unwrap()).unwrap());
-        self.engine
-            .ecs_world
-            .add_resource(self.rendering_info.as_ref().unwrap().settings.clone());
+
+    /// Scans `dir` for `.glb` files and uploads their meshes/skeletons/clips
+    /// into the ECS asset store. `dir` is used as the asset key so levels can
+    /// reference models by path.
+    fn load_models_from(&mut self, dir: &Path) {
         let context = &self.rendering_info.as_ref().unwrap().context;
         let command_pool = self.renderer.as_ref().unwrap().command_pool;
 
-        let model_paths = load_directory(
-            Path::new(&format!("{}/{}", env!("CARGO_MANIFEST_DIR"), "res/")),
-            "glb",
-        )
-        .unwrap();
+        let Ok(model_paths) = load_directory(dir, "glb") else {
+            crate::log_warn!(reason: "no model dir", "{}", dir.display());
+            return;
+        };
 
         for model_path in model_paths {
             match load_gltf_file(Path::new(&model_path), context, command_pool) {
@@ -110,6 +108,51 @@ impl ApplicationHandler for App {
                     crate::log_error!(reason: "failed to load gltf", "{}: {err:?}", model_path);
                 }
             }
+        }
+    }
+}
+impl ApplicationHandler for App {
+    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        event_loop.listen_device_events(winit::event_loop::DeviceEvents::Always);
+        self.rendering_info = Some(RenderingInfo::new(event_loop));
+        self.renderer = Some(
+            VulkanRenderer::new(
+                self.rendering_info.clone().unwrap(),
+                &self.rendering_info.as_ref().unwrap().settings,
+            )
+            .unwrap(),
+        );
+        self.engine
+            .ecs_world
+            .add_resource(self.rendering_info.as_ref().unwrap().settings.clone());
+
+        self.load_models_from(&Path::new(&format!(
+            "{}/{}",
+            env!("CARGO_MANIFEST_DIR"),
+            "res/"
+        )));
+        for dir in crate::assets::extra_asset_dirs() {
+            self.load_models_from(Path::new(&dir));
+        }
+
+        // Load sprite images
+        let renderer = self.renderer.as_ref().unwrap();
+        let context = &self.rendering_info.as_ref().unwrap().context;
+        load_image_sprites(
+            Path::new(&format!("{}/{}", env!("CARGO_MANIFEST_DIR"), "res/")),
+            &mut self.engine.ecs_world,
+            renderer,
+            context,
+            &self.rendering_info.as_ref().unwrap().settings,
+        );
+        for dir in crate::assets::extra_asset_dirs() {
+            load_image_sprites(
+                Path::new(&dir),
+                &mut self.engine.ecs_world,
+                renderer,
+                context,
+                &self.rendering_info.as_ref().unwrap().settings,
+            );
         }
 
         let context = EguiContext(self.renderer.as_ref().unwrap().get_egui_context());
@@ -226,19 +269,38 @@ impl ApplicationHandler for App {
                     return;
                 };
 
-                let query: Query<(&Transform, &ModelRenderer, Option<&SkinnedMesh>)> =
-                    Query::new(&self.engine.ecs_world);
+                // let query: Query<(&Transform, &ModelRenderer, Option<&SkinnedMesh>)> =
+                //     Query::new(&self.engine.ecs_world);
+                //
+                // for (transform, model_renderer, skinned) in query.iter() {
+                //     let Some(mesh) = self.engine.ecs_world.get_asset(model_renderer.model) else {
+                //         log_warn!(reason: "stale or missing mesh handle", "skipping entity");
+                //         continue;
+                //     };
+                //
+                //     frame_info.draws.push(DrawInfo {
+                //         mesh: mesh.clone(),
+                //         model: transform.to_matrix(),
+                //         joint_matrices: skinned.map(|s| s.joint_matrices.clone()),
+                //     });
+                // }
 
-                for (transform, model_renderer, skinned) in query.iter() {
-                    let Some(mesh) = self.engine.ecs_world.get_asset(model_renderer.model) else {
-                        log_warn!(reason: "stale or missing mesh handle", "skipping entity");
+                let sprite_query: Query<(&Transform, &Sprite)> = Query::new(&self.engine.ecs_world);
+
+                for (transform, sprite) in sprite_query.iter() {
+                    let Some(mesh) = self
+                        .engine
+                        .ecs_world
+                        .get_asset_by_path::<GpuMesh>(&sprite.path)
+                    else {
+                        log_warn!(reason: "missing sprite image", "{}", sprite.path);
                         continue;
                     };
 
                     frame_info.draws.push(DrawInfo {
                         mesh: mesh.clone(),
                         model: transform.to_matrix(),
-                        joint_matrices: skinned.map(|s| s.joint_matrices.clone()),
+                        joint_matrices: None,
                     });
                 }
 

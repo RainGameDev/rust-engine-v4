@@ -171,7 +171,7 @@ impl Archetype {
         self.columns.insert(type_id, Column::new::<T>());
     }
 
-    /// Appends a new row (entity with no component data yet — caller pushes into
+    /// Appends a new row (entity with no component data yet - caller pushes into
     /// each column separately). Returns the row index.
     pub(crate) fn allocate_row(&mut self, entity: Entity) -> usize {
         self.entities.push(entity);

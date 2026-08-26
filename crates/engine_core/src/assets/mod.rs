@@ -1,6 +1,7 @@
 use std::{
     any::{Any, TypeId},
     fmt::Debug,
+    sync::Mutex,
 };
 
 use macros::Asset;
@@ -12,6 +13,19 @@ pub trait Asset: Send + Sync + 'static {}
 
 #[derive(Debug, Clone, Default, Asset)]
 pub struct Assets {}
+
+/// Directories  that are scanned for assets
+static EXTRA_ASSET_DIRS: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+/// Registers an extra directory to scan for `.glb` models at startup.
+pub fn register_extra_asset_dir(path: impl Into<String>) {
+    EXTRA_ASSET_DIRS.lock().unwrap().push(path.into());
+}
+
+/// Returns every registered extra asset directory.
+pub fn extra_asset_dirs() -> Vec<String> {
+    EXTRA_ASSET_DIRS.lock().unwrap().clone()
+}
 
 /// Metadata per type by `#[derive(Asset)]`,
 /// collected automatically at startup via `inventory`

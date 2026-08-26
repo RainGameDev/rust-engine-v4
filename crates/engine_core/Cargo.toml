@@ -27,3 +27,4 @@ renet_netcode.workspace = true
 bincode.workspace = true
 serde.workspace = true
 gilrs.workspace = true
+image.workspace = true

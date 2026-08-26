@@ -3,6 +3,9 @@ use std::{any::TypeId, marker::PhantomData};
 use crate::ecs::components::{Component, archetype::Archetype};
 
 /// Restricts which archetypes a query matches, without fetching any data itself.
+///
+/// Built-in filters: [`With<T>`], [`Without<T>`]. Combine with tuples:
+/// `(With<A>, Without<B>)`.
 pub trait QueryFilter {
     fn matches_archetype(archetype: &Archetype) -> bool;
 }
@@ -13,6 +16,11 @@ impl QueryFilter for () {
     }
 }
 
+/// Filter: only match entities that **have** component `T`.
+///
+/// ```ignore
+/// let q: Query<&Position, With<Player>> = Query::new(&world);
+/// ```
 pub struct With<T>(PhantomData<T>);
 impl<T: Component> QueryFilter for With<T> {
     fn matches_archetype(archetype: &Archetype) -> bool {
@@ -20,6 +28,11 @@ impl<T: Component> QueryFilter for With<T> {
     }
 }
 
+/// Filter: only match entities that **lack** component `T`.
+///
+/// ```ignore
+/// let q: Query<Entity, Without<Parent>> = Query::new(&world);
+/// ```
 pub struct Without<T>(PhantomData<T>);
 impl<T: Component> QueryFilter for Without<T> {
     fn matches_archetype(archetype: &Archetype) -> bool {

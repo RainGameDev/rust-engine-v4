@@ -1,0 +1,5 @@
+{
+    "name": "cube",
+    "namespace": "basic",
+    "model": "meshes/cube.glb"
+}

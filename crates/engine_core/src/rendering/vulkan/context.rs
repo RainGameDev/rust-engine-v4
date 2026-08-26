@@ -14,7 +14,7 @@ use winit::{raw_window_handle::HasDisplayHandle, window::Window};
 
 use crate::rendering::{
     core::vertex::{Vertex, VertexDefinition},
-    rendering_settings::{DepthSettings, RasterizationSettings},
+    rendering_settings::{DepthSettings, RasterizationSettings, RenderingSettings},
     vulkan::{
         debug::{DebugUtils, VALIDATION_LAYER_NAME, is_validation_layer_available},
         device::PhysicalDevice,
@@ -163,11 +163,15 @@ impl VulkanRenderingContext {
                 })
                 .collect::<Vec<_>>();
 
+            let enabled_features = vk::PhysicalDeviceFeatures::default()
+                .sampler_anisotropy(physical_device.features.sampler_anisotropy == vk::TRUE);
+
             let device = instance.create_device(
                 physical_device.handle,
                 &vk::DeviceCreateInfo::default()
                     .queue_create_infos(&queue_create_infos)
                     .enabled_extension_names(&[ash::khr::swapchain::NAME.as_ptr()])
+                    .enabled_features(&enabled_features)
                     .push_next(
                         &mut vk::PhysicalDeviceDynamicRenderingFeatures::default()
                             .dynamic_rendering(true),
@@ -320,7 +324,13 @@ impl VulkanRenderingContext {
                             &vk::PipelineColorBlendStateCreateInfo::default().attachments(&[
                                 vk::PipelineColorBlendAttachmentState::default()
                                     .color_write_mask(vk::ColorComponentFlags::RGBA)
-                                    .blend_enable(false),
+                                    .blend_enable(true)
+                                    .src_color_blend_factor(vk::BlendFactor::SRC_ALPHA)
+                                    .dst_color_blend_factor(vk::BlendFactor::ONE_MINUS_SRC_ALPHA)
+                                    .color_blend_op(vk::BlendOp::ADD)
+                                    .src_alpha_blend_factor(vk::BlendFactor::ONE)
+                                    .dst_alpha_blend_factor(vk::BlendFactor::ONE_MINUS_SRC_ALPHA)
+                                    .alpha_blend_op(vk::BlendOp::ADD),
                             ]),
                         )
                         .dynamic_state(
@@ -797,6 +807,75 @@ impl VulkanRenderingContext {
         }
 
         Ok((buffer, buffer_memory))
+    }
+
+    /// Creates a texture sampler.
+    pub fn create_sampler(&self, render_settings: &RenderingSettings) -> Result<vk::Sampler> {
+        let image_settings = &render_settings.image_settings;
+        let anisotropy_supported = self.physical_device.features.sampler_anisotropy == vk::TRUE;
+        let anisotropy_enabled = image_settings.anisotropy_enabled && anisotropy_supported;
+        let max_anisotropy = if anisotropy_enabled {
+            (image_settings.anisotropy_amount as f32)
+                .min(self.physical_device.properties.limits.max_sampler_anisotropy)
+        } else {
+            1.0
+        };
+        let sampler = unsafe {
+            self.device.create_sampler(
+                &vk::SamplerCreateInfo::default()
+                    .mag_filter(image_settings.filter_mode)
+                    .min_filter(image_settings.filter_mode)
+                    .address_mode_u(image_settings.address_mode)
+                    .address_mode_v(image_settings.address_mode)
+                    .address_mode_w(image_settings.address_mode)
+                    .anisotropy_enable(anisotropy_enabled)
+                    .max_anisotropy(max_anisotropy)
+                    .unnormalized_coordinates(false)
+                    .compare_enable(false)
+                    .mipmap_mode(image_settings.mip_map_mode)
+                    .min_lod(0.0)
+                    .max_lod(vk::LOD_CLAMP_NONE),
+                None,
+            )?
+        };
+        Ok(sampler)
+    }
+
+    /// Copies a host-visible staging buffer to a device-local image.
+    pub fn copy_buffer_to_image(
+        &self,
+        cmd: vk::CommandBuffer,
+        buffer: vk::Buffer,
+        image: vk::Image,
+        width: u32,
+        height: u32,
+    ) {
+        unsafe {
+            let region = vk::BufferImageCopy::default()
+                .buffer_offset(0)
+                .buffer_row_length(0)
+                .buffer_image_height(0)
+                .image_subresource(
+                    vk::ImageSubresourceLayers::default()
+                        .aspect_mask(vk::ImageAspectFlags::COLOR)
+                        .mip_level(0)
+                        .base_array_layer(0)
+                        .layer_count(1),
+                )
+                .image_offset(vk::Offset3D::default())
+                .image_extent(vk::Extent3D {
+                    width,
+                    height,
+                    depth: 1,
+                });
+            self.device.cmd_copy_buffer_to_image(
+                cmd,
+                buffer,
+                image,
+                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                &[region],
+            );
+        }
     }
 }
 

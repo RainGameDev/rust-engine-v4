@@ -44,8 +44,8 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
                 type_name: #name_str,
                 create_column: || #engine_core::ecs::components::archetype::Column::new::<#ident>(),
 
-                serialize_raw: |_| panic!("{} is not networked — cannot serialize", #name_str),
-                deserialize_raw: |_| panic!("{} is not networked — cannot deserialize", #name_str),
+                serialize_raw: |_| panic!("{} is not networked - cannot serialize", #name_str),
+                deserialize_raw: |_| panic!("{} is not networked - cannot deserialize", #name_str),
             }
         }
     };
@@ -220,7 +220,7 @@ fn system_attribute(item: TokenStream, kind: &str, takes_delta: bool) -> TokenSt
 }
 #[proc_macro_attribute]
 pub fn component(attr: TokenStream, item: TokenStream) -> TokenStream {
-    let networked = attr.to_string().contains("networked"); 
+    let networked = attr.to_string().contains("networked");
     component_attribute(item, networked)
 }
 
@@ -246,8 +246,8 @@ fn component_attribute(item: TokenStream, networked: bool) -> TokenStream {
         }
     } else {
         quote! {
-            serialize_raw: |_| panic!("{} is not networked — cannot serialize", #name_str),
-            deserialize_raw: |_| panic!("{} is not networked — cannot deserialize", #name_str),
+            serialize_raw: |_| panic!("{} is not networked - cannot serialize", #name_str),
+            deserialize_raw: |_| panic!("{} is not networked - cannot deserialize", #name_str),
         }
     };
 
@@ -266,6 +266,27 @@ fn component_attribute(item: TokenStream, networked: bool) -> TokenStream {
                 type_name: #name_str,
                 create_column: || #engine_core::ecs::components::archetype::Column::new::<#ident>(),
                 #serialize_fields
+            }
+        }
+    };
+
+    expanded.into()
+}
+
+#[proc_macro_attribute]
+pub fn inspectable(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let target_ty = parse_macro_input!(attr as syn::Path);
+    let input = parse_macro_input!(item as syn::ItemFn);
+    let fn_ident = &input.sig.ident;
+    let engine_core = resolve_engine_core();
+
+    let expanded = quote! {
+        #input
+
+        #engine_core::inventory::submit! {
+            #engine_core::ecs::components::component_registry::ComponentInspector {
+                type_id: ::std::any::TypeId::of::<#target_ty>,
+                inspect: #fn_ident,
             }
         }
     };

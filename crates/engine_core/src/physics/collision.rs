@@ -1,15 +1,123 @@
+use anyhow::Result;
+use macros::fixed_update;
+use std::collections::HashMap;
+
 use nalgebra::{UnitQuaternion, Vector3};
 
 use crate::{
-    ecs::{World, components::engine_components::transform::Transform, entities::Entity},
+    ecs::{
+        World,
+        components::engine_components::transform::Transform,
+        entities::Entity,
+        query::{filter::Without, query::Query},
+    },
     physics::{
         bvh::Bvh,
-        math::{
-            closest_point_on_triangle, closest_points_segment_triangle, triangle_normal,
-        },
+        collider::{Collider, ColliderShape, IgnoreCollisions},
+        math::{closest_point_on_triangle, closest_points_segment_triangle, triangle_normal},
         velocity::Velocity,
     },
 };
+
+/// Returns the closest point on the surface of a collider to a given world-space point.
+fn closest_point_on_surface(
+    center: Vector3<f32>,
+    col: &Collider,
+    rotation: UnitQuaternion<f32>,
+    target: Vector3<f32>,
+) -> Vector3<f32> {
+    match &col.shape {
+        ColliderShape::Sphere { radius } => {
+            let dir = center - target;
+            let dist = dir.norm();
+            if dist > 1e-10 {
+                center - dir / dist * *radius
+            } else {
+                center + Vector3::new(0.0, *radius, 0.0)
+            }
+        }
+        ColliderShape::Cuboid { .. } | ColliderShape::Cylinder { .. } => {
+            let axes = col.world_axes(rotation);
+            let half = col.half_extents();
+            let d = target - center;
+            // Closest point on OBB to target, clamped to half-extents
+            center
+                + axes[0] * d.dot(&axes[0]).clamp(-half.x, half.x)
+                + axes[1] * d.dot(&axes[1]).clamp(-half.y, half.y)
+                + axes[2] * d.dot(&axes[2]).clamp(-half.z, half.z)
+        }
+        ColliderShape::Capsule { radius, height } => {
+            let half_h = height * 0.5;
+            let up = rotation * Vector3::new(0.0, 1.0, 0.0);
+            let seg_a = center + up * half_h;
+            let seg_b = center - up * half_h;
+            // Closest point on segment to target
+            let ab = seg_b - seg_a;
+            let t = ((target - seg_a).dot(&ab) / ab.norm_squared()).clamp(0.0, 1.0);
+            let closest_on_seg = seg_a + ab * t;
+            let dir = target - closest_on_seg;
+            let dist = dir.norm();
+            if dist > 1e-10 {
+                closest_on_seg + dir / dist * *radius
+            } else {
+                closest_on_seg + Vector3::new(0.0, *radius, 0.0)
+            }
+        }
+        ColliderShape::Mesh { bvh, .. } => {
+            if bvh.nodes.is_empty() {
+                return center;
+            }
+            let inv_rot = rotation.conjugate();
+            let local_target = inv_rot * (target - center);
+            // Walk BVH to find closest triangle point
+            let mut stack = vec![0u32];
+            let mut best = Vector3::zeros();
+            let mut best_dist2 = f32::MAX;
+            while let Some(idx) = stack.pop() {
+                let node = &bvh.nodes[idx as usize];
+                if node.left == 0 {
+                    for i in node.tri_start..node.tri_start + node.tri_count {
+                        let tri = &bvh.triangles[i as usize];
+                        let cp = closest_point_on_triangle(local_target, tri);
+                        let d2 = (local_target - cp).norm_squared();
+                        if d2 < best_dist2 {
+                            best_dist2 = d2;
+                            best = cp;
+                        }
+                    }
+                } else {
+                    // Simple AABB prune
+                    let closest_on_aabb = Vector3::new(
+                        local_target.x.clamp(node.aabb_min.x, node.aabb_max.x),
+                        local_target.y.clamp(node.aabb_min.y, node.aabb_max.y),
+                        local_target.z.clamp(node.aabb_min.z, node.aabb_max.z),
+                    );
+                    if (local_target - closest_on_aabb).norm_squared() < best_dist2 {
+                        stack.push(node.left);
+                        stack.push(node.right);
+                    }
+                }
+            }
+            rotation * best + center
+        }
+    }
+}
+
+/// Computes an approximate world-space contact point between two overlapping colliders.
+/// The contact is the midpoint of each shape's closest surface point to the other's center.
+pub fn compute_contact(
+    center_a: Vector3<f32>,
+    col_a: &Collider,
+    rotation_a: UnitQuaternion<f32>,
+    center_b: Vector3<f32>,
+    col_b: &Collider,
+    rotation_b: UnitQuaternion<f32>,
+    _mtv: Vector3<f32>,
+) -> Vector3<f32> {
+    let surf_a = closest_point_on_surface(center_a, col_a, rotation_a, center_b);
+    let surf_b = closest_point_on_surface(center_b, col_b, rotation_b, center_a);
+    (surf_a + surf_b) * 0.5
+}
 
 pub fn apply_position_correction(world: &mut World, id: Entity, offset: Vector3<f32>) {
     if offset.norm_squared() < 1e-6 {
@@ -375,4 +483,109 @@ pub fn aabb_overlaps_aabb(
         && max_a.y >= min_b.y
         && min_a.z <= max_b.z
         && max_a.z >= min_b.z
+}
+
+#[fixed_update]
+pub fn collision_detection_system(
+    _delta: f32,
+    colliders: Query<(Entity, &Collider, &Transform, &Velocity), Without<IgnoreCollisions>>,
+    bodies: Query<(Entity, &mut Velocity, &mut Transform), Without<IgnoreCollisions>>,
+) -> Result<()> {
+    // Snapshot all data immutably
+    let snapshots: Vec<(Entity, Collider, Transform, Velocity)> = colliders
+        .iter()
+        .map(|(e, c, t, v)| (e, c.clone(), t.clone(), v.clone()))
+        .collect();
+
+    // Detect collisions
+    let mut collisions = Vec::new();
+    for i in 0..snapshots.len() {
+        for j in (i + 1)..snapshots.len() {
+            let (e_a, col_a, tf_a, _) = &snapshots[i];
+            let (e_b, col_b, tf_b, _) = &snapshots[j];
+
+            if let Some(mtv) = col_a.translation_vector_against(
+                tf_a.global_position,
+                tf_a.global_rotation,
+                col_b,
+                tf_b.global_position,
+                tf_b.global_rotation,
+            ) {
+                let contact = compute_contact(
+                    tf_a.global_position,
+                    col_a,
+                    tf_a.global_rotation,
+                    tf_b.global_position,
+                    col_b,
+                    tf_b.global_rotation,
+                    mtv,
+                );
+                collisions.push((*e_a, *e_b, mtv, contact));
+            }
+        }
+    }
+
+    // impulse deltas from snapshots
+    let mut linear_deltas: HashMap<Entity, Vector3<f32>> = HashMap::new();
+    let mut angular_deltas: HashMap<Entity, Vector3<f32>> = HashMap::new();
+    let mut position_corrections: Vec<(Entity, Vector3<f32>)> = Vec::new();
+
+    for (e_a, e_b, mtv, contact) in &collisions {
+        let snap_a = snapshots.iter().find(|(e, _, _, _)| e == e_a).unwrap();
+        let snap_b = snapshots.iter().find(|(e, _, _, _)| e == e_b).unwrap();
+
+        let mut vel_a = snap_a.3.clone();
+        let mut vel_b = snap_b.3.clone();
+        let orig_linear_a = vel_a.linear_velocity;
+        let orig_angular_a = vel_a.angular_velocity;
+        let orig_linear_b = vel_b.linear_velocity;
+        let orig_angular_b = vel_b.angular_velocity;
+
+        let center_a = snap_a
+            .1
+            .world_center(snap_a.2.global_position, snap_a.2.global_rotation);
+        let center_b = snap_b
+            .1
+            .world_center(snap_b.2.global_position, snap_b.2.global_rotation);
+        let r_a = contact - center_a;
+        let r_b = contact - center_b;
+        let normal = mtv.normalize();
+
+        resolve_impulse(&mut vel_a, &mut vel_b, r_a, r_b, normal);
+
+        *linear_deltas.entry(*e_a).or_insert(Vector3::zeros()) +=
+            vel_a.linear_velocity - orig_linear_a;
+        *angular_deltas.entry(*e_a).or_insert(Vector3::zeros()) +=
+            vel_a.angular_velocity - orig_angular_a;
+        *linear_deltas.entry(*e_b).or_insert(Vector3::zeros()) +=
+            vel_b.linear_velocity - orig_linear_b;
+        *angular_deltas.entry(*e_b).or_insert(Vector3::zeros()) +=
+            vel_b.angular_velocity - orig_angular_b;
+
+        // Position correction — split MTV evenly between non-static bodies
+        if !snap_a.1.is_static {
+            position_corrections.push((*e_a, mtv * 0.5));
+        }
+        if !snap_b.1.is_static {
+            position_corrections.push((*e_b, -mtv * 0.5));
+        }
+    }
+
+    // Apply
+    for (entity, vel, tf) in bodies.iter() {
+        if let Some(dl) = linear_deltas.remove(&entity) {
+            vel.linear_velocity += dl;
+        }
+        if let Some(da) = angular_deltas.remove(&entity) {
+            vel.angular_velocity += da;
+        }
+        for (e, corr) in &position_corrections {
+            if *e == entity {
+                tf.global_position += corr;
+                tf.position += corr;
+            }
+        }
+    }
+
+    Ok(())
 }

@@ -4,8 +4,14 @@ use crate::ecs::components::Component;
 use crate::ecs::components::archetype::Archetype;
 use crate::ecs::entities::Entity;
 
-/// Defines what a query term fetches per row, and which archetypes qualify.
-/// Implemented for `Entity`, `&T`, `&mut T`, `Option<Q>`, and tuples of these.
+/// Defines what a query term fetches per entity and which archetypes qualify.
+///
+/// Implemented for:
+/// - `Entity` - always matches, yields the entity ID
+/// - `&T` - matches archetypes with `T`, yields `&T`
+/// - `&mut T` - matches archetypes with `T`, yields `&mut T`
+/// - `Option<Q>` - always matches, yields `Some(inner)` or `None`
+/// - Tuples `(A, B, ...)` - all terms must match, yields tuple of items
 ///
 /// # Safety
 ///
@@ -74,7 +80,7 @@ unsafe impl<T: Component> WorldQuery for &mut T {
 unsafe impl<Q: WorldQuery> WorldQuery for Option<Q> {
     type Item<'w> = Option<Q::Item<'w>>;
 
-    // Option always "matches" at the archetype level — the archetype either
+    // Option always "matches" at the archetype level - the archetype either
     // has the inner data (Some) or doesn't (None), both are valid.
     fn matches_archetype(_archetype: &Archetype) -> bool {
         true
@@ -91,7 +97,7 @@ unsafe impl<Q: WorldQuery> WorldQuery for Option<Q> {
     }
 }
 
-// Tuple impls — extend up to however many terms you need in practice.
+// Tuple impls - extend up to however many terms you need in practice.
 macro_rules! impl_world_query_tuple {
     ($($t:ident),+) => {
         unsafe impl<$($t: WorldQuery),+> WorldQuery for ($($t,)+) {

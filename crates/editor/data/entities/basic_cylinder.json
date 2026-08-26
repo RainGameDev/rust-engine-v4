@@ -1,0 +1,5 @@
+{
+    "name": "cylinder",
+    "namespace": "basic",
+    "model": "meshes/cylinder.glb"
+}

@@ -11,6 +11,9 @@ use crate::physics::{
     math::{rotate_vector, triangle_normal},
 };
 
+#[component]
+pub struct IgnoreCollisions;
+
 /// The shape used for collision detection.
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum ColliderShape {
@@ -36,6 +39,21 @@ pub enum ColliderShape {
 }
 
 impl ColliderShape {
+    pub fn circle(radius: f32) -> Self {
+        Self::Sphere { radius }
+    }
+
+    pub fn rect(half_width: f32, half_height: f32) -> Self {
+        Self::Cuboid {
+            size: Vector3::new(half_width, half_height, 0.1),
+        }
+    }
+
+    pub fn aabb(width: f32, height: f32) -> Self {
+        Self::Cuboid {
+            size: Vector3::new(width * 0.5, height * 0.5, 0.0),
+        }
+    }
     pub fn half_extents(&self) -> Vector3<f32> {
         match self {
             ColliderShape::Cuboid { size } => *size,
@@ -97,6 +115,17 @@ impl Collider {
             is_static: true,
             is_area: false,
         }
+    }
+
+    pub fn circle_2d(radius: f32) -> Self {
+        Self::new(ColliderShape::circle(radius), Vector3::zeros())
+    }
+
+    pub fn rect_2d(half_width: f32, half_height: f32) -> Self {
+        Self::new(
+            ColliderShape::rect(half_width, half_height),
+            Vector3::zeros(),
+        )
     }
 
     /// Returns the world-space center of this collider (offset rotated by entity rotation).

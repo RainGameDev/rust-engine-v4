@@ -1,12 +1,15 @@
 use anyhow::Result;
-use macros::component;
+use macros::{component, inspectable};
 use nalgebra::{Matrix4, UnitQuaternion, Vector3};
 
-use crate::ecs::{
-    World,
-    components::engine_components::hierarchy::{Children, Parent},
-    entities::Entity,
-    query::{filter::Without, query::Query},
+use crate::{
+    ecs::{
+        World,
+        components::engine_components::hierarchy::{Children, Parent},
+        entities::Entity,
+        query::{filter::Without, query::Query},
+    },
+    rendering::egui::helpers::vec3_drag,
 };
 
 #[component(networked)]
@@ -18,6 +21,14 @@ pub struct Transform {
     pub global_position: Vector3<f32>,
     pub global_rotation: UnitQuaternion<f32>,
     pub global_scale: Vector3<f32>,
+}
+
+#[inspectable(Transform)]
+fn inspect_transform(ptr: *mut u8, ui: &mut egui::Ui) {
+    let transform = unsafe { &mut *(ptr as *mut Transform) };
+    ui.label("Transform");
+    ui.separator();
+    vec3_drag(&mut transform.position, ui, "Position".into());
 }
 
 impl Transform {

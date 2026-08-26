@@ -787,8 +787,10 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "engine_core",
+ "game_data",
  "hot-lib-reloader",
  "libloading",
+ "winit",
 ]
 
 [[package]]
@@ -900,6 +902,7 @@ dependencies = [
  "egui_extras",
  "gilrs",
  "gltf",
+ "image",
  "inventory",
  "macros",
  "nalgebra",
@@ -1197,6 +1200,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "engine_core",
+ "nalgebra",
  "serde",
  "serde_json",
 ]

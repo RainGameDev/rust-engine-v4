@@ -1,0 +1,5 @@
+{
+    "name": "test_prop",
+    "namespace": "basic",
+    "model": "meshes/test.glb"
+}

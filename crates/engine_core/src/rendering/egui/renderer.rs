@@ -84,10 +84,6 @@ impl UIRenderer {
 fn sampler_options_from(image_settings: ImageSettings) -> SamplerOptions {
     SamplerOptions {
         filter: image_settings.filter_mode,
-        // egui requires CLAMP_TO_EDGE: solid UI colors are drawn from a single white
-        // texel at the atlas corner (WHITE_UV == (0,0)). With REPEAT that corner sample
-        // blends the white texel with transparent neighbours under LINEAR filtering,
-        // making windows/buttons appear see-through.
         address_mode: vk::SamplerAddressMode::CLAMP_TO_EDGE,
         anisotropy_enabled: image_settings.anisotropy_enabled,
         anisotropy_amount: image_settings.anisotropy_amount,

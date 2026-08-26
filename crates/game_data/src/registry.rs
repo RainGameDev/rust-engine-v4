@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, fs, path::Path};
 
-use crate::components::item::ItemDef;
+use crate::components::{entity::EntityDef, item::ItemDef};
 
 pub const REGISTRY_VERSION: u32 = 1;
 
@@ -11,11 +11,16 @@ pub struct GameRegistry {
     /// Bump when defs change so clients know to resync.
     pub version: u32,
     pub items: HashMap<String, ItemDef>,
+    pub entities: HashMap<String, EntityDef>,
 }
 
 impl GameRegistry {
     pub fn item(&self, id: &str) -> Option<&ItemDef> {
         self.items.get(id)
+    }
+
+    pub fn entity(&self, id: &str) -> Option<&EntityDef> {
+        self.entities.get(id)
     }
 
     pub fn load_from_dir(dir: impl AsRef<Path>) -> Result<Self> {
@@ -29,6 +34,12 @@ impl GameRegistry {
             let def: ItemDef = serde_json::from_slice(&bytes)
                 .with_context(|| format!("parsing item def '{name}'"))?;
             registry.items.insert(def.qualified_id(), def);
+        }
+
+        for (name, bytes) in read_json_files(&dir.join("entities"))? {
+            let def: EntityDef = serde_json::from_slice(&bytes)
+                .with_context(|| format!("parsing entity def '{name}'"))?;
+            registry.entities.insert(def.qualified_id(), def);
         }
 
         Ok(registry)

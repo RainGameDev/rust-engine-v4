@@ -19,6 +19,7 @@ use crate::assets::core::storage::AssetMap;
 use crate::ecs::components::archetype::{Archetype, ArchetypeSignature};
 use crate::ecs::components::component_registry::find_component_registration;
 use crate::ecs::components::engine_components::hierarchy::{Children, Parent};
+use crate::ecs::components::engine_components::name::Name;
 use crate::ecs::components::{BoxedComponent, Component};
 use crate::ecs::entities::Entity;
 use crate::ecs::resources::{Resource, ResourceMap};
@@ -126,6 +127,8 @@ impl World {
             },
         );
 
+        self.add_component(entity, Name("Entity".into()));
+
         entity
     }
 
@@ -178,6 +181,25 @@ impl World {
                 row,
             },
         );
+
+        self.add_component(entity, Name("Entity".to_string()));
+    }
+
+    /// Gets all the components on an entity, returns the type ID and it's mutable values in a u8
+    pub fn components_on(&self, entity: Entity) -> Vec<(TypeId, *mut u8)> {
+        let Some(location) = self.locations.get(&entity) else {
+            return Vec::new();
+        };
+        let archetype = &self.archetypes[location.archetype_id];
+
+        archetype
+            .columns
+            .iter()
+            .map(|(&type_id, column)| {
+                let ptr = unsafe { column.get_raw(location.row) };
+                (type_id, ptr)
+            })
+            .collect()
     }
 
     // --- Assets ---
@@ -314,6 +336,18 @@ impl World {
         let column = archetype.columns.get_mut(&TypeId::of::<T>())?;
         Some(unsafe { &mut *(column.get_raw(location.row) as *mut T) })
     }
+    pub fn get_name(&mut self, entity: Entity) -> String {
+        self.get_component::<Name>(entity).unwrap().0.clone()
+    }
+
+    pub fn set_name(&mut self, entity: Entity, set_to: String) {
+        if self.get_component::<Name>(entity).is_none() {
+            self.add_component(entity, Name("Enttiy".into()));
+        }
+
+        let name = self.get_component_mut::<Name>(entity);
+        name.unwrap().0 = set_to;
+    }
 
     // --- Resources ---
 
@@ -354,7 +388,7 @@ impl World {
         for &type_id in &signature {
             let registration = find_component_registration(type_id).unwrap_or_else(|| {
                 panic!(
-                    "component with TypeId {:?} was never registered — did you forget #[derive(Component)]?",
+                    "component with TypeId {:?} was never registered - did you forget #[derive(Component)]?",
                     type_id
                 )
             });
@@ -404,4 +438,17 @@ impl World {
         let loc = self.locations.get(&entity).expect("entity not found");
         &self.archetypes[loc.archetype_id].signature
     }
+}
+
+/// Converts an input pointer to the type of T.
+///
+/// Example:
+/// ```rust
+/// #[inspectable(Transform)]
+///fn inspect_transform(ptr: *mut u8, ui: &mut egui::Ui) {
+///   let transform = to_component::<Transform>(ptr);
+///}
+///```
+pub fn to_component<T>(ptr: *mut u8) -> &'static mut T {
+    unsafe { &mut *(ptr as *mut T) }
 }

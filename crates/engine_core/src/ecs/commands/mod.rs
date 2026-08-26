@@ -15,6 +15,10 @@ enum Command {
         entity: Entity,
         component: BoxedComponent,
     },
+    SetName {
+        entity: Entity,
+        name: String,
+    },
     RemoveComponent {
         entity: Entity,
         type_id: TypeId,
@@ -105,6 +109,7 @@ impl Commands {
                 Command::RemoveComponent { entity, type_id } => {
                     world.remove_component_by_type_id(entity, type_id)
                 }
+                Command::SetName { entity, name } => world.set_name(entity, name),
                 Command::Despawn { entity } => {
                     world.despawn(entity);
                 }

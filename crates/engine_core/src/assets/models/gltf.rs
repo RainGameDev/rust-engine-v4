@@ -125,6 +125,7 @@ pub fn load_gltf_file(
                 index_buffer_memory: index_buffer.1,
                 index_count: indices.len() as u32,
                 material_name,
+                ..GpuMesh::default()
             });
         }
     }

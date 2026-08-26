@@ -75,6 +75,9 @@ pub struct VulkanRenderer {
     joint_descriptor_set_layout: vk::DescriptorSetLayout,
     joint_descriptor_pool: vk::DescriptorPool,
     joint_descriptor_set: vk::DescriptorSet,
+    pub texture_descriptor_set_layout: vk::DescriptorSetLayout,
+    pub texture_descriptor_pool: vk::DescriptorPool,
+    fallback_texture_descriptor_set: vk::DescriptorSet,
     present_semaphores: Vec<Semaphore>,
     context: Arc<VulkanRenderingContext>,
     current_image_index: u32,
@@ -122,7 +125,10 @@ fn create_graphics_pipeline(
 }
 
 impl VulkanRenderer {
-    pub fn new(rendering_info: RenderingInfo) -> anyhow::Result<Self> {
+    pub fn new(
+        rendering_info: RenderingInfo,
+        rendering_settings: &RenderingSettings,
+    ) -> anyhow::Result<Self> {
         let settings = rendering_info.settings.clone();
         let swapchain = VulkanSwapchain::new(
             rendering_info.context.clone().into(),
@@ -179,9 +185,25 @@ impl VulkanRenderer {
                 .offset(0)
                 .size(std::mem::size_of::<PushConstants>() as u32);
 
+            // Texture descriptor set layout (set 1, binding 0)
+            let texture_binding = vk::DescriptorSetLayoutBinding::default()
+                .binding(0)
+                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                .descriptor_count(1)
+                .stage_flags(vk::ShaderStageFlags::FRAGMENT);
+            let texture_descriptor_set_layout =
+                context.create_descriptor_set_layout(&[texture_binding])?;
+
+            let texture_descriptor_pool = context.create_descriptor_pool(
+                &[vk::DescriptorPoolSize::default()
+                    .ty(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                    .descriptor_count(1024)],
+                1024,
+            )?;
+
             let pipeline_layout = context.device.create_pipeline_layout(
                 &PipelineLayoutCreateInfo::default()
-                    .set_layouts(&[joint_descriptor_set_layout])
+                    .set_layouts(&[joint_descriptor_set_layout, texture_descriptor_set_layout])
                     .push_constant_ranges(&[push_constant_range]),
                 None,
             )?;
@@ -195,6 +217,91 @@ impl VulkanRenderer {
                     .flags(ash::vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER),
                 None,
             )?;
+
+            // Create a 1x1 white fallback texture for meshes without textures
+            let white_pixel = [255u8, 255, 255, 255];
+            let tex_format = vk::Format::R8G8B8A8_SRGB;
+            let (fallback_image, _fallback_memory) = context.create_image(
+                vk::Extent2D {
+                    width: 1,
+                    height: 1,
+                },
+                tex_format,
+                vk::ImageTiling::OPTIMAL,
+                vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::SAMPLED,
+                vk::MemoryPropertyFlags::DEVICE_LOCAL,
+            )?;
+            let (staging_buf, staging_mem) = context.create_buffer(
+                4,
+                vk::BufferUsageFlags::TRANSFER_SRC,
+                vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
+            )?;
+            let ptr = context
+                .device
+                .map_memory(staging_mem, 0, 4, vk::MemoryMapFlags::empty())?
+                as *mut u8;
+            ptr.copy_from_nonoverlapping(white_pixel.as_ptr(), 4);
+            context.device.unmap_memory(staging_mem);
+            let cmd = context.begin_single_time_commands(command_pool);
+            context.transition_image_layout(
+                cmd,
+                fallback_image,
+                image::ImageLayoutState {
+                    layout: vk::ImageLayout::UNDEFINED,
+                    access_mask: vk::AccessFlags::empty(),
+                    stage_mask: vk::PipelineStageFlags::TOP_OF_PIPE,
+                    queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+                },
+                image::ImageLayoutState {
+                    layout: vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                    access_mask: vk::AccessFlags::TRANSFER_WRITE,
+                    stage_mask: vk::PipelineStageFlags::TRANSFER,
+                    queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+                },
+                vk::ImageAspectFlags::COLOR,
+            );
+            context.copy_buffer_to_image(cmd, staging_buf, fallback_image, 1, 1);
+            context.transition_image_layout(
+                cmd,
+                fallback_image,
+                image::ImageLayoutState {
+                    layout: vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                    access_mask: vk::AccessFlags::TRANSFER_WRITE,
+                    stage_mask: vk::PipelineStageFlags::TRANSFER,
+                    queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+                },
+                image::ImageLayoutState {
+                    layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                    access_mask: vk::AccessFlags::SHADER_READ,
+                    stage_mask: vk::PipelineStageFlags::FRAGMENT_SHADER,
+                    queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+                },
+                vk::ImageAspectFlags::COLOR,
+            );
+            let fallback_queue = context.queues[context.queue_families.transfer as usize];
+            context.end_single_time_commands(cmd, fallback_queue, command_pool);
+            context.device.destroy_buffer(staging_buf, None);
+            context.device.free_memory(staging_mem, None);
+            let fallback_view = context.create_image_view(
+                fallback_image,
+                tex_format,
+                vk::ImageAspectFlags::COLOR,
+            )?;
+            let fallback_sampler = context.create_sampler(rendering_settings)?;
+            let fallback_texture_descriptor_set = context
+                .allocate_descriptor_set(texture_descriptor_pool, texture_descriptor_set_layout)?;
+            context.device.update_descriptor_sets(
+                &[vk::WriteDescriptorSet::default()
+                    .dst_set(fallback_texture_descriptor_set)
+                    .dst_binding(0)
+                    .dst_array_element(0)
+                    .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                    .image_info(&[vk::DescriptorImageInfo::default()
+                        .sampler(fallback_sampler)
+                        .image_view(fallback_view)
+                        .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)])],
+                &[],
+            );
 
             let in_flight_frames_count = 1;
 
@@ -241,6 +348,9 @@ impl VulkanRenderer {
                 joint_descriptor_set_layout,
                 joint_descriptor_pool,
                 joint_descriptor_set,
+                texture_descriptor_set_layout,
+                texture_descriptor_pool,
+                fallback_texture_descriptor_set,
                 present_semaphores: Vec::new(),
                 context: Arc::new(rendering_info.context.clone()),
                 swapchain,
@@ -385,6 +495,19 @@ impl VulkanRenderer {
                     self.pipeline_layout,
                     0,
                     &[self.joint_descriptor_set],
+                    &[],
+                );
+
+                // Bind texture descriptor set (set 1)
+                let tex_set = mesh
+                    .texture_descriptor_set
+                    .unwrap_or(self.fallback_texture_descriptor_set);
+                self.context.device.cmd_bind_descriptor_sets(
+                    frame.command_buffer,
+                    vk::PipelineBindPoint::GRAPHICS,
+                    self.pipeline_layout,
+                    1,
+                    &[tex_set],
                     &[],
                 );
 

@@ -1,0 +1,5 @@
+{
+    "name": "sphere",
+    "namespace": "basic",
+    "model": "meshes/sphere.glb"
+}

@@ -9,19 +9,19 @@ pub fn registered_inputs() -> Vec<RegisteredInput> {
     use KeyCode as K;
     vec![
         RegisteredInput {
-            name: "Move Forward",
+            name: "MoveForward",
             default: ActionBinding::button(InputSource::Keyboard(PhysicalKey::Code(K::KeyW))),
         },
         RegisteredInput {
-            name: "Move Backward",
+            name: "MoveBackward",
             default: ActionBinding::button(InputSource::Keyboard(PhysicalKey::Code(K::KeyS))),
         },
         RegisteredInput {
-            name: "Move Left",
+            name: "MoveLeft",
             default: ActionBinding::button(InputSource::Keyboard(PhysicalKey::Code(K::KeyA))),
         },
         RegisteredInput {
-            name: "Move Right",
+            name: "MoveRight",
             default: ActionBinding::button(InputSource::Keyboard(PhysicalKey::Code(K::KeyD))),
         },
         RegisteredInput {

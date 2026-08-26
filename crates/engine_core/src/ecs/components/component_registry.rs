@@ -29,3 +29,13 @@ pub fn find_component_registration(type_id: TypeId) -> Option<&'static Component
 pub fn find_component_registration_by_name(name: &str) -> Option<&'static ComponentRegistration> {
     inventory::iter::<ComponentRegistration>().find(|reg| reg.type_name == name)
 }
+
+pub struct ComponentInspector {
+    pub type_id: fn() -> TypeId,
+    pub inspect: fn(*mut u8, &mut egui::Ui),
+}
+inventory::collect!(ComponentInspector);
+
+pub fn find_inspector(type_id: TypeId) -> Option<&'static ComponentInspector> {
+    inventory::iter::<ComponentInspector>().find(|i| (i.type_id)() == type_id)
+}

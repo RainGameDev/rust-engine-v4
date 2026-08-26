@@ -6,6 +6,52 @@ use crate::ecs::{
     query::{filter::QueryFilter, world_query::WorldQuery},
 };
 
+/// Iterates over all entities matching the query terms `Q` and filter `F`.
+///
+/// `Q` defines what data to fetch (e.g. `&Position`, `(&Position, &Velocity)`).
+/// `F` is an optional filter (defaults to no filter).
+///
+/// # Examples
+///
+/// ```ignore
+/// // All entities with Position
+/// let q: Query<&Position> = Query::new(&world);
+///
+/// // Entities with both Position and Velocity
+/// let q: Query<(&Position, &Velocity)> = Query::new(&world);
+///
+/// // Mutable access
+/// let q: Query<(&mut Position, &Velocity)> = Query::new(&world);
+///
+/// // Optional component (returns None when missing)
+/// let q: Query<(&Position, Option<&Health>)> = Query::new(&world);
+///
+/// // Entity IDs
+/// let q: Query<Entity> = Query::new(&world);
+///
+/// // With filter - only entities that have Player
+/// let q: Query<&Position, With<Player>> = Query::new(&world);
+///
+/// // Without filter - only entities that lack Frozen
+/// let q: Query<&Position, Without<Frozen>> = Query::new(&world);
+///
+/// // Combined filters
+/// let q: Query<&Position, (With<Player>, Without<Frozen>)> = Query::new(&world);
+/// ```
+///
+/// As a system parameter:
+/// ```ignore
+/// #[update]
+/// fn my_system(
+///     query: Query<(&mut Position, &Velocity)>,
+///     filtered: Query<Entity, Without<EditorCamera>>,
+/// ) -> Result<()> {
+///     for (pos, vel) in &query {
+///         pos.x += vel.dx;
+///     }
+///     Ok(())
+/// }
+/// ```
 pub struct Query<'w, Q: WorldQuery, F: QueryFilter = ()> {
     world: &'w World,
     matching_archetypes: Vec<usize>,
