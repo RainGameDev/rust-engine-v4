@@ -5,7 +5,11 @@ members = [
     "crates/engine_core",
     "crates/editor",
     "crates/game", 
+    "crates/game_2d",
+    "crates/game_3d",
     "crates/server", "crates/client",
+    "crates/client_2d",
+    "crates/client_3d",
     "crates/game_data",
 ]
 
