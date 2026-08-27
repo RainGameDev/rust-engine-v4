@@ -16,7 +16,7 @@ use winit::{
 
 use crate::{
     Engine,
-    assets::models::{animation::SkinnedMesh, gltf::load_gltf_file},
+    assets::models::gltf::load_gltf_file,
     ecs::{
         components::engine_components::{
             model_renderer::ModelRenderer, sprite::Sprite, transform::Transform,
@@ -25,7 +25,7 @@ use crate::{
         systems::{StartSystem, run_system, scheduler::Schedule},
     },
     input::InputManager,
-    log_debug, log_error, log_info, log_warn,
+    log_error, log_info, log_warn,
     networking::client::{NetworkClient, pump_network},
     rendering::{
         core::{
@@ -37,7 +37,6 @@ use crate::{
         rendering_settings::RenderingSettings,
         vulkan::{RenderingInfo, VulkanRenderer},
     },
-    tiles::TileMap,
     utils::directory_check::load_directory,
     window::window_manager::{MouseMode, WindowManager},
 };
@@ -158,32 +157,6 @@ impl ApplicationHandler for App {
         let context = EguiContext(self.renderer.as_ref().unwrap().get_egui_context());
         egui_extras::install_image_loaders(&context.0);
         self.engine.ecs_world.add_resource(context);
-
-        // Build the terrain mesh from the bundled default map and spawn it.
-        match TileMap::load_default() {
-            Ok(tile_map) => {
-                let renderer = self.renderer.as_ref().unwrap();
-                let context = &self.rendering_info.as_ref().unwrap().context;
-                let terrain_mesh =
-                    raw_mesh_to_gpu_mesh(tile_map.build_mesh(), renderer, context).unwrap();
-                let handle = self
-                    .engine
-                    .ecs_world
-                    .add_asset(terrain_mesh, "meshes/terrain".to_string());
-                let entity = self.engine.ecs_world.spawn();
-                self.engine
-                    .ecs_world
-                    .add_component(entity, Transform::default());
-                self.engine
-                    .ecs_world
-                    .add_component(entity, ModelRenderer { model: handle });
-                self.engine
-                    .ecs_world
-                    .add_component(entity, tile_map.build_collider());
-                crate::log_info!("spawned terrain: {} tiles", tile_map.width * tile_map.depth);
-            }
-            Err(err) => crate::log_error!(reason: "failed to load terrain", "{err:?}"),
-        }
 
         let window = self.rendering_info.as_ref().unwrap().window.clone();
         let window_manager = WindowManager {
