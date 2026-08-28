@@ -3,14 +3,14 @@ use ash::vk::{self, Buffer, DescriptorSet, DeviceMemory, ImageView, Sampler};
 use macros::Asset;
 
 use crate::rendering::{
-    core::vertex::Vertex,
+    core::vertex::{Vertex, VertexDefinition},
     rendering_settings::RenderingSettings,
     vulkan::{VulkanRenderer, context::VulkanRenderingContext, image::ImageLayoutState},
 };
 
 #[derive(Clone, Debug)]
-pub struct RawMesh {
-    pub vertices: Vec<Vertex>,
+pub struct RawMesh<V: VertexDefinition = Vertex> {
+    pub vertices: Vec<V>,
     pub indices: Vec<u32>,
     pub material_name: String,
 }
@@ -21,7 +21,7 @@ pub struct GpuModel {
     pub name: String,
 }
 
-#[derive(Asset, Debug, Clone, Default)]
+#[derive(Asset, Debug, Clone)]
 pub struct GpuMesh {
     pub vertex_buffer: Buffer,
     pub vertex_buffer_memory: DeviceMemory,
@@ -29,11 +29,34 @@ pub struct GpuMesh {
     pub index_buffer_memory: DeviceMemory,
     pub index_count: u32,
     pub material_name: String,
+    //TODO: Replace with something better,
+    // A generic maybe?
+    /// Name of the vertex layout this mesh was built with.
+    pub vertex_type_name: &'static str,
     pub texture_image: Option<vk::Image>,
     pub texture_memory: Option<DeviceMemory>,
     pub texture_image_view: Option<ImageView>,
     pub texture_sampler: Option<Sampler>,
     pub texture_descriptor_set: Option<DescriptorSet>,
+}
+
+impl Default for GpuMesh {
+    fn default() -> Self {
+        GpuMesh {
+            vertex_buffer: vk::Buffer::null(),
+            vertex_buffer_memory: vk::DeviceMemory::null(),
+            index_buffer: vk::Buffer::null(),
+            index_buffer_memory: vk::DeviceMemory::null(),
+            index_count: 0,
+            material_name: String::new(),
+            vertex_type_name: "Vertex",
+            texture_image: None,
+            texture_memory: None,
+            texture_image_view: None,
+            texture_sampler: None,
+            texture_descriptor_set: None,
+        }
+    }
 }
 pub fn cube_mesh(offset: [f32; 3], material_name: impl Into<String>) -> RawMesh {
     let [ox, oy, oz] = offset;
@@ -227,8 +250,8 @@ pub fn cube_mesh(offset: [f32; 3], material_name: impl Into<String>) -> RawMesh 
     }
 }
 
-pub fn raw_mesh_to_gpu_mesh(
-    raw_mesh: RawMesh,
+pub fn raw_mesh_to_gpu_mesh<V: VertexDefinition>(
+    raw_mesh: RawMesh<V>,
     renderer: &VulkanRenderer,
     context: &VulkanRenderingContext,
 ) -> Result<GpuMesh> {
@@ -244,6 +267,7 @@ pub fn raw_mesh_to_gpu_mesh(
         index_buffer_memory: index_buffer.1,
         index_count: raw_mesh.indices.len() as u32,
         material_name: raw_mesh.material_name,
+        vertex_type_name: V::vertex_type_name(),
         texture_image: None,
         texture_memory: None,
         texture_image_view: None,
@@ -253,8 +277,8 @@ pub fn raw_mesh_to_gpu_mesh(
 }
 
 /// Creates a GpuMesh with a texture uploaded to the GPU.
-pub fn raw_mesh_to_gpu_mesh_with_texture(
-    raw_mesh: RawMesh,
+pub fn raw_mesh_to_gpu_mesh_with_texture<V: VertexDefinition>(
+    raw_mesh: RawMesh<V>,
     pixels: &[u8],
     width: u32,
     height: u32,
@@ -372,6 +396,7 @@ pub fn raw_mesh_to_gpu_mesh_with_texture(
         index_buffer_memory: index_buffer.1,
         index_count: raw_mesh.indices.len() as u32,
         material_name: raw_mesh.material_name,
+        vertex_type_name: V::vertex_type_name(),
         texture_image: Some(texture_image),
         texture_memory: Some(texture_memory),
         texture_image_view: Some(texture_image_view),

@@ -13,7 +13,7 @@ use winit::raw_window_handle::HasWindowHandle;
 use winit::{raw_window_handle::HasDisplayHandle, window::Window};
 
 use crate::rendering::{
-    core::vertex::{Vertex, VertexDefinition},
+    core::vertex::VertexDefinition,
     rendering_settings::{DepthSettings, RasterizationSettings, RenderingSettings},
     vulkan::{
         debug::{DebugUtils, VALIDATION_LAYER_NAME, is_validation_layer_available},
@@ -258,12 +258,10 @@ impl VulkanRenderingContext {
         depth_format: vk::Format,
         rasterization_settings: RasterizationSettings,
         depth_settings: DepthSettings,
+        bindings: &[vk::VertexInputBindingDescription],
+        attributes: &[vk::VertexInputAttributeDescription],
     ) -> Result<vk::Pipeline> {
         let entry_point = std::ffi::CString::new("main").unwrap();
-
-        let bindings = vec![Vertex::get_binding_description()];
-
-        let attributes = Vertex::get_attribute_descriptions();
 
         unsafe {
             Ok(self

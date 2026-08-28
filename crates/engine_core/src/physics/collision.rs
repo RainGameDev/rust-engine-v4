@@ -562,7 +562,7 @@ pub fn collision_detection_system(
         *angular_deltas.entry(*e_b).or_insert(Vector3::zeros()) +=
             vel_b.angular_velocity - orig_angular_b;
 
-        // Position correction — split MTV evenly between non-static bodies
+        // Position correction - split MTV evenly between non-static bodies
         if !snap_a.1.is_static {
             position_corrections.push((*e_a, mtv * 0.5));
         }

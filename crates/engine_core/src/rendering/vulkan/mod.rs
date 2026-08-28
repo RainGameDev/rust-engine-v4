@@ -1,7 +1,10 @@
 use crate::{
     log_debug,
     rendering::{
-        core::frame_info::{FrameInfo, PushConstants, matrix_to_push_constant},
+        core::{
+            frame_info::{FrameInfo, PushConstants, matrix_to_push_constant},
+            vertex::VertexTypeInfo,
+        },
         egui::renderer::UIRenderer,
         rendering_settings::RenderingSettings,
         vulkan::{
@@ -19,7 +22,8 @@ use ash::vk::{
     PipelineLayoutCreateInfo, Semaphore,
 };
 use egui::{Context, TextureId, epaint::ImageDelta};
-use std::{fs, sync::Arc};
+use inventory;
+use std::{collections::HashMap, fs, sync::Arc};
 use winit::{event::WindowEvent, event_loop::ActiveEventLoop, window::Window};
 
 pub mod context;
@@ -66,7 +70,7 @@ pub struct VulkanRenderer {
     pub current_frame: usize,
     pub command_pool: CommandPool,
     pub image_layouts: ImageLayouts,
-    pub pipeline: Pipeline,
+    pub pipelines: HashMap<&'static str, Pipeline>,
     pub pipeline_layout: PipelineLayout,
     pub ui_renderer: UIRenderer,
     pub settings: RenderingSettings,
@@ -96,16 +100,29 @@ fn load_shader_module(
     Ok(context.create_shader_module(&code)?)
 }
 
-fn create_graphics_pipeline(
+/// Builds a graphics pipeline for a single registered vertex type.
+fn create_pipeline_for(
     context: &VulkanRenderingContext,
     pipeline_layout: vk::PipelineLayout,
     swapchain: &VulkanSwapchain,
     settings: &RenderingSettings,
+    info: &VertexTypeInfo,
 ) -> Result<vk::Pipeline> {
-    let vertex_shader = load_shader_module(context, &settings.default_vertex_shader)?;
+    let vertex_shader_path = info
+        .vertex_shader
+        .unwrap_or(&settings.default_vertex_shader);
+    let vertex_shader = load_shader_module(context, vertex_shader_path)?;
     let fragment_shader = load_shader_module(context, &settings.default_fragment_shader)?;
 
-    log_debug!("Creating Graphics Pipeline");
+    log_debug!(
+        "Creating Graphics Pipeline for vertex type '{}' (vs: {})",
+        info.name,
+        vertex_shader_path
+    );
+
+    let bindings = vec![(info.binding_description)()];
+    let attributes = (info.attribute_descriptions)();
+
     let pipeline = context.create_graphics_pipeline(
         vertex_shader,
         fragment_shader,
@@ -115,6 +132,8 @@ fn create_graphics_pipeline(
         swapchain.depth.format,
         settings.rasterization_settings,
         settings.depth_settings,
+        &bindings,
+        &attributes,
     )?;
 
     unsafe {
@@ -122,6 +141,21 @@ fn create_graphics_pipeline(
         context.device.destroy_shader_module(fragment_shader, None);
     }
     Ok(pipeline)
+}
+
+/// Builds one pipeline per registered vertex type, keyed by `vertex_type_name`.
+fn create_all_pipelines(
+    context: &VulkanRenderingContext,
+    pipeline_layout: vk::PipelineLayout,
+    swapchain: &VulkanSwapchain,
+    settings: &RenderingSettings,
+) -> Result<HashMap<&'static str, Pipeline>> {
+    let mut pipelines = HashMap::new();
+    for info in inventory::iter::<VertexTypeInfo> {
+        let pipeline = create_pipeline_for(context, pipeline_layout, swapchain, settings, info)?;
+        pipelines.insert(info.name, pipeline);
+    }
+    Ok(pipelines)
 }
 
 impl VulkanRenderer {
@@ -208,8 +242,7 @@ impl VulkanRenderer {
                 None,
             )?;
 
-            let pipeline =
-                create_graphics_pipeline(&context, pipeline_layout, &swapchain, &settings)?;
+            let pipelines = create_all_pipelines(&context, pipeline_layout, &swapchain, &settings)?;
 
             let command_pool = context.device.create_command_pool(
                 &ash::vk::CommandPoolCreateInfo::default()
@@ -341,7 +374,7 @@ impl VulkanRenderer {
                 frames,
                 command_pool,
                 image_layouts: ImageLayouts::default(),
-                pipeline,
+                pipelines,
                 pipeline_layout,
                 joint_buffer,
                 joint_buffer_memory,
@@ -458,14 +491,27 @@ impl VulkanRenderer {
                 0,
                 &[vk::Rect2D::default().extent(self.swapchain.extent)],
             );
-            self.context.device.cmd_bind_pipeline(
-                frame.command_buffer,
-                vk::PipelineBindPoint::GRAPHICS,
-                self.pipeline,
-            );
+            let mut current_pipeline: Option<vk::Pipeline> = None;
 
             for draw in frame_info.draws {
                 let mesh = &draw.mesh;
+
+                // Bind the graphics pipeline matching this mesh's vertex type.
+                let pipeline = match self.pipelines.get(mesh.vertex_type_name) {
+                    Some(p) => *p,
+                    None => *self
+                        .pipelines
+                        .get("Vertex")
+                        .expect("no pipeline registered for vertex type or default 'Vertex'"),
+                };
+                if current_pipeline != Some(pipeline) {
+                    self.context.device.cmd_bind_pipeline(
+                        frame.command_buffer,
+                        vk::PipelineBindPoint::GRAPHICS,
+                        pipeline,
+                    );
+                    current_pipeline = Some(pipeline);
+                }
 
                 // Upload this entity's joint matrices to the storage buffer.
                 let joints = draw.joint_matrices.as_ref();
@@ -577,19 +623,21 @@ impl VulkanRenderer {
                 .update_sampler_options(self.settings.image_settings);
         }
         if pipeline_changed {
-            self.recreate_pipeline()?;
+            self.recreate_pipelines()?;
         }
         Ok(())
     }
 
-    /// Rebuilds the graphics pipeline from the current render settings.
-    pub fn recreate_pipeline(&mut self) -> anyhow::Result<()> {
+    /// Rebuilds every vertex-type pipeline from the current render settings.
+    pub fn recreate_pipelines(&mut self) -> anyhow::Result<()> {
         unsafe {
-            // Make sure no in-flight work references the old pipeline.
+            // Make sure no in-flight work references the old pipelines.
             self.context.device.device_wait_idle()?;
-            self.context.device.destroy_pipeline(self.pipeline, None);
+            for pipeline in self.pipelines.values() {
+                self.context.device.destroy_pipeline(*pipeline, None);
+            }
         }
-        self.pipeline = create_graphics_pipeline(
+        self.pipelines = create_all_pipelines(
             &self.context,
             self.pipeline_layout,
             &self.swapchain,
