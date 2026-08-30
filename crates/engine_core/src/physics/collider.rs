@@ -146,6 +146,34 @@ impl Collider {
         ]
     }
 
+    /// Returns a copy with shape dimensions baked for the given world scale,
+    /// matching how a mesh's local geometry is scaled by its transform.
+    pub fn scaled(&self, scale: Vector3<f32>) -> Self {
+        let shape = match &self.shape {
+            ColliderShape::Cuboid { size } => ColliderShape::Cuboid {
+                size: Vector3::new(size.x * scale.x, size.y * scale.y, size.z * scale.z),
+            },
+            ColliderShape::Sphere { radius } => ColliderShape::Sphere {
+                radius: radius * scale.x.max(scale.y).max(scale.z),
+            },
+            ColliderShape::Capsule { radius, height } => ColliderShape::Capsule {
+                radius: radius * scale.x.max(scale.z),
+                height: height * scale.y,
+            },
+            ColliderShape::Cylinder { radius, height } => ColliderShape::Cylinder {
+                radius: radius * scale.x.max(scale.z),
+                height: height * scale.y,
+            },
+            ColliderShape::Mesh { .. } => self.shape.clone(),
+        };
+        Self {
+            shape,
+            offset: self.offset,
+            is_static: self.is_static,
+            is_area: self.is_area,
+        }
+    }
+
     /// Returns the half-extents (collider_size is already treated as half-extents).
     pub fn half_extents(&self) -> Vector3<f32> {
         self.shape.half_extents()

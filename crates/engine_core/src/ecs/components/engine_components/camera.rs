@@ -112,8 +112,8 @@ impl Camera {
     /// Builds the view matrix from this camera entity's world position/rotation.
     pub fn view_matrix(&self, global: &Transform) -> Matrix4<f32> {
         let eye = Point3::from(global.global_position);
-        let forward = global.rotation * -Vector3::z();
-        let up = global.rotation * Vector3::y();
+        let forward = global.global_rotation * -Vector3::z();
+        let up = global.global_rotation * Vector3::y();
         Matrix4::look_at_rh(&eye, &(eye + forward), &up)
     }
 

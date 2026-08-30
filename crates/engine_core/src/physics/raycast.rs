@@ -85,7 +85,7 @@ pub struct ColliderSnapshot {
 
 /// Takes a snapshot of every entity in the world that has a Collider component
 pub fn build_collider_snapshot(world: &World) -> Vec<ColliderSnapshot> {
-    let query: Query<(&mut Collider, &Transform, Entity)> = Query::new(world);
+    let query: Query<(&Collider, &Transform, Entity)> = Query::new(world);
 
     query
         .iter()
@@ -94,24 +94,8 @@ pub fn build_collider_snapshot(world: &World) -> Vec<ColliderSnapshot> {
             let scale = transform.global_scale;
             let rotation = transform.global_rotation;
 
-            // Bake scale to matches collision_detection_system
-            collider.shape = match collider.shape {
-                ColliderShape::Cuboid { size } => ColliderShape::Cuboid {
-                    size: Vector3::new(size.x * scale.x, size.y * scale.y, size.z * scale.z),
-                },
-                ColliderShape::Sphere { radius } => ColliderShape::Sphere {
-                    radius: radius * scale.x.max(scale.y).max(scale.z),
-                },
-                ColliderShape::Capsule { radius, height } => ColliderShape::Capsule {
-                    radius: radius * scale.x.max(scale.z),
-                    height: height * scale.y,
-                },
-                ColliderShape::Cylinder { radius, height } => ColliderShape::Cylinder {
-                    radius: radius * scale.x.max(scale.z),
-                    height: height * scale.y,
-                },
-                ColliderShape::Mesh { .. } => collider.shape.clone(),
-            };
+            // Bake scale to match collision_detection_system
+            let collider = collider.scaled(scale);
 
             let center = collider.world_center(position, rotation);
             let axes = collider.world_axes(rotation);

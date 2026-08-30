@@ -2,10 +2,7 @@ use anyhow::Result;
 use macros::{component, fixed_update};
 use nalgebra::{UnitQuaternion, Vector3};
 
-use crate::ecs::{
-    components::engine_components::transform::Transform,
-    query::query::Query,
-};
+use crate::ecs::{components::engine_components::transform::Transform, query::query::Query};
 
 #[component]
 pub struct Velocity {
@@ -24,6 +21,21 @@ pub struct Velocity {
 }
 
 impl Velocity {
+    pub fn zero() -> Self {
+        Self {
+            linear_velocity: Vector3::zeros(),
+            angular_velocity: Vector3::zeros(),
+            mass: 1.0,
+            is_grounded: false,
+            process: true,
+            inertia_tensor: Vector3::new(1.0, 1.0, 1.0),
+            mu_static: 0.5,
+            mu_kinetic: 0.3,
+            restitution: 0.0,
+            linear_damping: 0.0,
+            angular_damping: 0.05,
+        }
+    }
     pub fn zero_2d() -> Self {
         Self {
             linear_velocity: Vector3::zeros(),
@@ -65,10 +77,7 @@ pub fn physics_integration(
         let angle = vel.angular_velocity.norm() * delta;
         if angle > 1e-8 {
             let axis = vel.angular_velocity.normalize();
-            let dq = UnitQuaternion::from_axis_angle(
-                &nalgebra::Unit::new_normalize(axis),
-                angle,
-            );
+            let dq = UnitQuaternion::from_axis_angle(&nalgebra::Unit::new_normalize(axis), angle);
             tf.rotation = dq * tf.rotation;
             tf.global_rotation = dq * tf.global_rotation;
         }

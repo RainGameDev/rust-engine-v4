@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 use crate::ecs::World;
 use crate::ecs::components::engine_components::transform::transform_update;
 use crate::ecs::systems::{
-    FixedUpdateSystem, LateUpdateSystem, UpdateSystem, run_fixed_update, run_system,
+    DeltaTime, FixedUpdateSystem, LateUpdateSystem, UpdateSystem, run_fixed_update, run_system,
 };
 
 pub struct Schedule {
@@ -40,6 +40,14 @@ impl Schedule {
                 self.accumulator = Duration::ZERO;
                 break;
             }
+        }
+
+        // Publish the render-frame delta so `#[update]` systems can read it.
+        if !world.has_resource::<DeltaTime>() {
+            world.add_resource(DeltaTime::default());
+        }
+        if let Ok(mut delta_time) = world.get_resource_mut::<DeltaTime>() {
+            delta_time.0 = delta.as_secs_f32();
         }
 
         // Refresh global transforms before update systems run so collider/raycast

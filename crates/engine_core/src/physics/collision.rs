@@ -1,6 +1,6 @@
 use anyhow::Result;
 use macros::fixed_update;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use nalgebra::{UnitQuaternion, Vector3};
 
@@ -167,12 +167,20 @@ pub fn resolve_impulse(
     } else {
         0.0
     };
-    let inv_i_a = vel_a
-        .inertia_tensor
-        .map(|v| if v > 0.0 { 1.0 / v } else { 0.0 });
-    let inv_i_b = vel_b
-        .inertia_tensor
-        .map(|v| if v > 0.0 { 1.0 / v } else { 0.0 });
+    let inv_i_a = if vel_a.mass > 0.0 {
+        vel_a
+            .inertia_tensor
+            .map(|v| if v > 0.0 { 1.0 / v } else { 0.0 })
+    } else {
+        Vector3::zeros()
+    };
+    let inv_i_b = if vel_b.mass > 0.0 {
+        vel_b
+            .inertia_tensor
+            .map(|v| if v > 0.0 { 1.0 / v } else { 0.0 })
+    } else {
+        Vector3::zeros()
+    };
 
     // Velocity at contact point including angular contribution
     let va_contact = vel_a.linear_velocity + vel_a.angular_velocity.cross(&r_a);
@@ -494,7 +502,7 @@ pub fn collision_detection_system(
     // Snapshot all data immutably
     let snapshots: Vec<(Entity, Collider, Transform, Velocity)> = colliders
         .iter()
-        .map(|(e, c, t, v)| (e, c.clone(), t.clone(), v.clone()))
+        .map(|(e, c, t, v)| (e, c.scaled(t.global_scale), t.clone(), v.clone()))
         .collect();
 
     // Detect collisions
@@ -529,10 +537,22 @@ pub fn collision_detection_system(
     let mut linear_deltas: HashMap<Entity, Vector3<f32>> = HashMap::new();
     let mut angular_deltas: HashMap<Entity, Vector3<f32>> = HashMap::new();
     let mut position_corrections: Vec<(Entity, Vector3<f32>)> = Vec::new();
+    let mut grounded_contact: HashSet<Entity> = HashSet::new();
 
     for (e_a, e_b, mtv, contact) in &collisions {
         let snap_a = snapshots.iter().find(|(e, _, _, _)| e == e_a).unwrap();
         let snap_b = snapshots.iter().find(|(e, _, _, _)| e == e_b).unwrap();
+
+        let is_upward = |push: Vector3<f32>| {
+            let len = push.norm();
+            len > 1e-6 && push.y > 0.75 * len
+        };
+        if !snap_a.1.is_static && is_upward(*mtv) {
+            grounded_contact.insert(*e_a);
+        }
+        if !snap_b.1.is_static && is_upward(-*mtv) {
+            grounded_contact.insert(*e_b);
+        }
 
         let mut vel_a = snap_a.3.clone();
         let mut vel_b = snap_b.3.clone();
@@ -562,17 +582,31 @@ pub fn collision_detection_system(
         *angular_deltas.entry(*e_b).or_insert(Vector3::zeros()) +=
             vel_b.angular_velocity - orig_angular_b;
 
-        // Position correction - split MTV evenly between non-static bodies
+        // Position correction - a static body absorbs the full MTV, otherwise split evenly
+        let (split_a, split_b) = if snap_a.1.is_static || snap_b.1.is_static {
+            (1.0, 1.0)
+        } else {
+            (0.5, 0.5)
+        };
         if !snap_a.1.is_static {
-            position_corrections.push((*e_a, mtv * 0.5));
+            position_corrections.push((*e_a, mtv * split_a));
         }
         if !snap_b.1.is_static {
-            position_corrections.push((*e_b, -mtv * 0.5));
+            position_corrections.push((*e_b, -mtv * split_b));
         }
     }
 
     // Apply
     for (entity, vel, tf) in bodies.iter() {
+        // Grounding is sticky over the zero-penetration frames at rest, but
+        // clears quickly once the body truly leaves the ground (rising fast
+        // or falling fast).
+        let contact_now = grounded_contact.contains(&entity);
+        let lingering = !contact_now
+            && vel.is_grounded
+            && vel.linear_velocity.y < 1.0
+            && vel.linear_velocity.y > -2.0;
+        vel.is_grounded = contact_now || lingering;
         if let Some(dl) = linear_deltas.remove(&entity) {
             vel.linear_velocity += dl;
         }

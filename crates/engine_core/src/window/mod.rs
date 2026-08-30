@@ -16,7 +16,7 @@ use winit::{
 
 use crate::{
     Engine,
-    assets::models::gltf::load_gltf_file,
+    assets::models::{animation::SkinnedMesh, gltf::load_gltf_file},
     ecs::{
         components::engine_components::{
             model_renderer::ModelRenderer, sprite::Sprite, transform::Transform,
@@ -242,21 +242,21 @@ impl ApplicationHandler for App {
                     return;
                 };
 
-                // let query: Query<(&Transform, &ModelRenderer, Option<&SkinnedMesh>)> =
-                //     Query::new(&self.engine.ecs_world);
-                //
-                // for (transform, model_renderer, skinned) in query.iter() {
-                //     let Some(mesh) = self.engine.ecs_world.get_asset(model_renderer.model) else {
-                //         log_warn!(reason: "stale or missing mesh handle", "skipping entity");
-                //         continue;
-                //     };
-                //
-                //     frame_info.draws.push(DrawInfo {
-                //         mesh: mesh.clone(),
-                //         model: transform.to_matrix(),
-                //         joint_matrices: skinned.map(|s| s.joint_matrices.clone()),
-                //     });
-                // }
+                let query: Query<(&Transform, &ModelRenderer, Option<&SkinnedMesh>)> =
+                    Query::new(&self.engine.ecs_world);
+
+                for (transform, model_renderer, skinned) in query.iter() {
+                    let Some(mesh) = self.engine.ecs_world.get_asset(model_renderer.model) else {
+                        log_warn!(reason: "stale or missing mesh handle", "skipping entity");
+                        continue;
+                    };
+
+                    frame_info.draws.push(DrawInfo {
+                        mesh: mesh.clone(),
+                        model: transform.to_matrix(),
+                        joint_matrices: skinned.map(|s| s.joint_matrices.clone()),
+                    });
+                }
 
                 let sprite_query: Query<(&Transform, &Sprite)> = Query::new(&self.engine.ecs_world);
 
