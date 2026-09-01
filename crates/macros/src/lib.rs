@@ -275,6 +275,46 @@ fn component_attribute(item: TokenStream, networked: bool) -> TokenStream {
 }
 
 #[proc_macro_attribute]
+pub fn resource(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let attr_str = attr.to_string();
+    let networked = attr_str.contains("networked");
+    let clone = attr_str.contains("clone") || networked;
+    resource_attribute(item, networked, clone)
+}
+
+fn resource_attribute(item: TokenStream, networked: bool, clone: bool) -> TokenStream {
+    let input = parse_macro_input!(item as DeriveInput);
+    let ident = &input.ident;
+    let name_str = ident.to_string();
+    let engine_core = resolve_engine_core();
+
+    let derives = match (networked, clone) {
+        (true, _) => quote! { #[derive(Debug, Clone, ::serde::Serialize, ::serde::Deserialize)] },
+        (false, true) => quote! { #[derive(Debug, Clone)] },
+        (false, false) => quote! { #[derive(Debug)] },
+    };
+
+    let expanded = quote! {
+        #derives
+        #input
+
+        const _: fn() = || {
+            fn assert_resource<T: #engine_core::ecs::resources::Resource>() {}
+            assert_resource::<#ident>();
+        };
+
+        #engine_core::inventory::submit! {
+            #engine_core::ecs::resources::resource_registration::ResourceRegistration {
+                type_id: ::std::any::TypeId::of::<#ident>,
+                type_name: #name_str,
+            }
+        }
+    };
+
+    expanded.into()
+}
+
+#[proc_macro_attribute]
 pub fn inspectable(attr: TokenStream, item: TokenStream) -> TokenStream {
     let target_ty = parse_macro_input!(attr as syn::Path);
     let input = parse_macro_input!(item as syn::ItemFn);

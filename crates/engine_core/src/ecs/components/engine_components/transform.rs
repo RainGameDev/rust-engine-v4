@@ -90,6 +90,11 @@ impl Transform {
         self.rotation * -Vector3::z()
     }
 
+    /// Forward direction in world space, accounting for parent transforms.
+    pub fn global_forward(&self) -> Vector3<f32> {
+        self.global_rotation * -Vector3::z()
+    }
+
     pub fn right(&self) -> Vector3<f32> {
         self.rotation * Vector3::x()
     }

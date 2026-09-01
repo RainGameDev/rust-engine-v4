@@ -23,7 +23,7 @@ use ash::vk::{
 };
 use egui::{Context, TextureId, epaint::ImageDelta};
 use inventory;
-use std::{collections::HashMap, fs, sync::Arc};
+use std::{collections::HashMap, fs, path::Path, sync::Arc};
 use winit::{event::WindowEvent, event_loop::ActiveEventLoop, window::Window};
 
 pub mod context;
@@ -91,12 +91,12 @@ pub struct VulkanRenderer {
 const MAX_JOINTS: usize = 256;
 
 // TODO: replace with asset loader
-const SHADER_DIR: &str = "res/shaders/";
 fn load_shader_module(
     context: &VulkanRenderingContext,
     path: &str,
 ) -> Result<ash::vk::ShaderModule> {
-    let code = fs::read(format!("{SHADER_DIR}{path}"))?;
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("res/shaders");
+    let code = fs::read(dir.join(path))?;
     Ok(context.create_shader_module(&code)?)
 }
 

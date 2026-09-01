@@ -2,6 +2,7 @@ use std::any::TypeId;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 
+use crate::assets::Asset;
 use crate::ecs::World;
 use crate::ecs::components::{BoxedComponent, Component};
 use crate::ecs::entities::Entity;
@@ -35,6 +36,9 @@ enum Command {
     SetParent {
         child: Entity,
         parent: Option<Entity>,
+    },
+    AddAsset {
+        insert: Box<dyn FnOnce(&mut World) + Send>,
     },
 }
 
@@ -95,6 +99,18 @@ impl Commands {
         self.queue.push(Command::SetParent { child, parent });
     }
 
+    /// Registers an asset of type `T` into the world's asset storage under
+    /// `path`. Look it back up (and obtain its `Handle<T>`) later via
+    /// `Assets<T>::get_handle(path)`.
+    pub fn add_asset<T: Asset>(&mut self, value: T, path: impl Into<String>) {
+        let path = path.into();
+        self.queue.push(Command::AddAsset {
+            insert: Box::new(move |world| {
+                world.add_asset(value, path);
+            }),
+        });
+    }
+
     pub fn clear_parent(&mut self, child: Entity) {
         self.set_parent(child, None);
     }
@@ -116,6 +132,7 @@ impl Commands {
                 Command::AddResource { insert } => insert(world),
                 Command::RemoveResource { insert } => insert(world),
                 Command::SetParent { child, parent } => world.set_parent(child, parent),
+                Command::AddAsset { insert } => insert(world),
             }
         }
     }

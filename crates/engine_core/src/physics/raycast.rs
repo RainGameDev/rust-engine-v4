@@ -210,8 +210,10 @@ fn test_snapshot(
         }
 
         ColliderShape::Cuboid { .. } | ColliderShape::Cylinder { .. } => {
-            let (t_enter, _, face) = ray_vs_obb(ray, snap.center, &snap.axes, snap.half_extents)?;
-            let t = if t_enter >= 0.0 { t_enter } else { return None };
+            let (t_enter, t_max, face) =
+                ray_vs_obb(ray, snap.center, &snap.axes, snap.half_extents)?;
+            // Treat an origin inside the box as an immediate hit (t == 0).
+            let t = t_enter.max(0.0).min(t_max);
             if t > max_distance {
                 return None;
             }
@@ -226,8 +228,10 @@ fn test_snapshot(
 
         ColliderShape::Capsule { radius, height } => {
             // Approximate as OBB for intersection, then refine normal.
-            let (t_enter, _, face) = ray_vs_obb(ray, snap.center, &snap.axes, snap.half_extents)?;
-            let t = if t_enter >= 0.0 { t_enter } else { return None };
+            let (t_enter, t_max, face) =
+                ray_vs_obb(ray, snap.center, &snap.axes, snap.half_extents)?;
+            // Treat an origin inside the box as an immediate hit (t == 0).
+            let t = t_enter.max(0.0).min(t_max);
             if t > max_distance {
                 return None;
             }

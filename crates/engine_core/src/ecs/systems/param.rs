@@ -161,9 +161,21 @@ impl<'w> Raycast<'w> {
         let query: Query<(&Camera, &Transform, Entity)> = Query::new(self.world);
         let queries: Vec<(&Camera, &Transform, Entity)> = query.iter().collect();
         let (_, transform, entity) = queries.first()?;
-        let ray = get_camera_ray(transform, Direction::Forward);
+        let ray = Ray::new(transform.global_position, transform.global_forward());
         let snapshots = self.snapshots();
-        // Ignore the camera entity itself so it can't hit its own collider
-        raycast_colliders_raw(&ray, range, &snapshots, Some(vec![*entity]))
+
+        // Ignore the camera's own collider and the colliders of its ancestors
+        // (e.g. a character controller that the camera is parented to).
+        let mut ignore = vec![*entity];
+        let mut current = *entity;
+        if let Some(parent) = self
+            .world
+            .get_component::<crate::ecs::components::engine_components::hierarchy::Parent>(current)
+        {
+            current = parent.0;
+            ignore.push(current);
+        }
+
+        raycast_colliders_raw(&ray, range, &snapshots, Some(ignore))
     }
 }

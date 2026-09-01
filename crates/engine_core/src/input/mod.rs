@@ -14,7 +14,7 @@ use winit::{
     keyboard::PhysicalKey,
 };
 
-use crate::Resource;
+use crate::resource;
 use crate::log_warn;
 
 use action::{ActionBinding, GamepadAxis, GamepadButton, InputSource};
@@ -83,7 +83,7 @@ pub struct TouchState {
 }
 
 /// Input manager resource that determines the current state of inputs.
-#[derive(Debug, Resource)]
+#[resource]
 pub struct InputManager {
     gilrs: Option<Mutex<gilrs::Gilrs>>,
 

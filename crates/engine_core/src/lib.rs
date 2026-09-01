@@ -17,7 +17,7 @@ mod tests;
 pub use ash;
 pub use egui;
 pub use inventory;
-pub use macros::{Component, Resource, component};
+pub use macros::{Component, Resource, component, resource};
 pub use macros::{fixed_update, late_update, start, update};
 pub use nalgebra;
 
